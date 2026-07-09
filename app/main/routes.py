@@ -1,9 +1,11 @@
 import secrets
-from datetime import datetime
-from flask import Blueprint, request, jsonify
+from datetime import datetime, timedelta
+from flask import Blueprint, request, jsonify, g
 from googleapiclient.discovery import build
 from app.google_calendar import credentials_from_user, build_oauth_flow
 from app.models.user import User
+from app.models.exchange_code import ExchangeCode
+from app.auth import require_auth
 from app.extensions import db
 import os
 
@@ -84,3 +86,29 @@ def get_busy_hours():
         if 'dateTime' in e.get('start', {})
     ]
     return jsonify(busy_hours)
+
+
+@main_bp.route('/token/exchange', methods=['POST'])
+def token_exchange():
+    data = request.get_json() or {}
+    code = data.get('code', '')
+    exchange = ExchangeCode.query.filter_by(code=code).first() if code else None
+
+    if not exchange or exchange.expires_at < datetime.utcnow():
+        if exchange:
+            db.session.delete(exchange)
+            db.session.commit()
+        return jsonify({'error': 'Invalid or expired code'}), 401
+
+    user = exchange.user
+    db.session.delete(exchange)
+    db.session.commit()
+    return jsonify({'api_token': user.api_token, 'email': user.email})
+
+
+@main_bp.route('/token/revoke', methods=['POST'])
+@require_auth
+def token_revoke():
+    g.current_user.api_token = None
+    db.session.commit()
+    return jsonify({'message': 'Token revoked'})
