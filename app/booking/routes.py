@@ -57,6 +57,33 @@ def book():
     if not chosen_admin:
         return jsonify({'error': 'No admin available for the requested time slot'}), 409
 
+    if data.get('confirmed') is True:
+        created_event = create_calendar_event(
+            chosen_admin, org, data['guest_email'], data['guest_name'], start_dt, end_dt,
+        )
+        if not created_event:
+            return jsonify({'error': 'Time slot is no longer available'}), 409
+
+        booking = Booking(
+            google_event_id=created_event['id'],
+            org_id=org.id,
+            admin_user_id=chosen_admin.id,
+            guest_email=data['guest_email'],
+            guest_name=data['guest_name'],
+            start_datetime=start_dt,
+            end_datetime=end_dt,
+        )
+        db.session.add(booking)
+        db.session.commit()
+
+        return jsonify({
+            'event_id': created_event['id'],
+            'title': created_event['summary'],
+            'start': created_event['start']['dateTime'],
+            'end': created_event['end']['dateTime'],
+            'html_link': created_event.get('htmlLink'),
+        }), 201
+
     token = secrets.token_urlsafe(32)
     pending = PendingBooking(
         confirmation_token=token,

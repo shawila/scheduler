@@ -219,3 +219,39 @@ class TestConfirmBooking:
         second_call_kwargs = service.events().insert.call_args_list[1][1]
         assert second_call_kwargs['calendarId'] == 'org-cal-id'
         assert second_call_kwargs['sendUpdates'] == 'none'
+
+
+CONFIRMED_EVENT = {
+    'id': 'google_event_direct',
+    'summary': 'Appointment',
+    'start': {'dateTime': '2024-08-01T11:00:00Z'},
+    'end': {'dateTime': '2024-08-01T12:30:00Z'},
+    'htmlLink': 'https://calendar.google.com/event?eid=direct',
+}
+
+
+class TestPostBookConfirmed:
+    def _payload(self, org_id):
+        return {**VALID_PAYLOAD, 'org_uid': org_id, 'confirmed': True}
+
+    def test_creates_event_immediately(self, client, app, authed_user, org_with_owner):
+        with patch('app.booking.routes.check_mx_record', return_value=True), \
+             patch('app.booking.routes.select_admin', return_value=authed_user), \
+             patch('app.booking.routes.create_calendar_event', return_value=CONFIRMED_EVENT), \
+             patch('app.booking.routes.send_confirmation_email') as mock_email:
+            response = client.post('/book', json=self._payload(org_with_owner), headers=auth())
+        assert response.status_code == 201
+        assert response.json['event_id'] == 'google_event_direct'
+        mock_email.assert_not_called()
+        with app.app_context():
+            assert Booking.query.filter_by(google_event_id='google_event_direct').first() is not None
+            assert PendingBooking.query.filter_by(guest_email='guest@example.com').first() is None
+
+    def test_slot_taken_returns_409(self, client, app, authed_user, org_with_owner):
+        with patch('app.booking.routes.check_mx_record', return_value=True), \
+             patch('app.booking.routes.select_admin', return_value=authed_user), \
+             patch('app.booking.routes.create_calendar_event', return_value=None):
+            response = client.post('/book', json=self._payload(org_with_owner), headers=auth())
+        assert response.status_code == 409
+        with app.app_context():
+            assert Booking.query.count() == 0
