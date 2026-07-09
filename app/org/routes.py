@@ -10,6 +10,7 @@ from app.models.user import User
 from app.google_calendar import credentials_from_user, build_oauth_flow, INVITE_REDIRECT_URI
 from app.auth import require_auth
 from app.org.email import send_invite_email
+from app.slots import compute_available_slots
 
 org_bp = Blueprint('org', __name__, url_prefix='/org')
 
@@ -28,6 +29,39 @@ def my_org():
         'name': org.name,
         'calendar_id': org.google_calendar_id,
     })
+
+
+@org_bp.route('/<int:org_uid>/availability', methods=['GET'])
+@require_auth
+def availability(org_uid):
+    try:
+        date = datetime.strptime(request.args.get('date', ''), '%Y-%m-%d')
+    except ValueError:
+        return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+
+    actor = OrganizationMember.query.filter_by(
+        user_id=g.current_user.id, org_id=org_uid
+    ).first()
+    if not actor:
+        return jsonify({'error': 'Not a member of this org'}), 403
+
+    members = OrganizationMember.query.filter_by(org_id=org_uid).all()
+    time_min = date.strftime('%Y-%m-%dT00:00:00Z')
+    time_max = (date + timedelta(days=1)).strftime('%Y-%m-%dT00:00:00Z')
+
+    members_busy = []
+    for member in members:
+        credentials = credentials_from_user(member.user)
+        service = build('calendar', 'v3', credentials=credentials)
+        freebusy = service.freebusy().query(body={
+            'timeMin': time_min,
+            'timeMax': time_max,
+            'timeZone': 'UTC',
+            'items': [{'id': 'primary'}],
+        }).execute()
+        members_busy.append(freebusy['calendars']['primary'].get('busy', []))
+
+    return jsonify({'slots': compute_available_slots(members_busy, date)})
 
 
 @org_bp.route('/register', methods=['POST'])
