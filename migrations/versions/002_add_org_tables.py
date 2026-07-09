@@ -15,11 +15,31 @@ depends_on = None
 
 
 def upgrade():
-    op.rename_table('customer', 'user')
+    # Rename customer to user if it exists
+    ctx = op.get_context()
+    if ctx.bind.dialect.has_table(ctx.bind, 'customer'):
+        op.rename_table('customer', 'user')
 
-    with op.batch_alter_table('user') as batch_op:
-        batch_op.add_column(sa.Column('api_token', sa.String(100), nullable=True))
-        batch_op.create_unique_constraint('uq_user_api_token', ['api_token'])
+    # Create user table if it doesn't exist
+    if not ctx.bind.dialect.has_table(ctx.bind, 'user'):
+        op.create_table(
+            'user',
+            sa.Column('id', sa.Integer(), nullable=False),
+            sa.Column('email', sa.String(120), nullable=False, unique=True),
+            sa.Column('token', sa.String(500), nullable=False),
+            sa.Column('refresh_token', sa.String(500), nullable=False),
+            sa.Column('token_uri', sa.String(200), nullable=False),
+            sa.Column('client_id', sa.String(200), nullable=False),
+            sa.Column('client_secret', sa.String(200), nullable=False),
+            sa.Column('scopes', sa.Text(), nullable=False),
+            sa.Column('api_token', sa.String(100), nullable=True, unique=True),
+            sa.PrimaryKeyConstraint('id'),
+        )
+    else:
+        # Add api_token column if table exists but column doesn't
+        with op.batch_alter_table('user') as batch_op:
+            batch_op.add_column(sa.Column('api_token', sa.String(100), nullable=True))
+            batch_op.create_unique_constraint('uq_user_api_token', ['api_token'])
 
     op.create_table(
         'organization',

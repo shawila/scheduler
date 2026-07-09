@@ -51,6 +51,9 @@ python run.py
 | `FLASK_ENV`    | —                   | Set to `development` to allow HTTP for OAuth |
 | `SECRET_KEY`   | `your-secret-key`   | Flask session secret — change before deploy  |
 | `DATABASE_URL` | `sqlite:///app.db`  | SQLAlchemy connection string                 |
+| `ALLOWED_REDIRECT_HOSTS` | `localhost:3030` | Comma-separated hosts allowed as `/connect` redirect targets |
+
+For production, use `postgresql://user:pass@host:5432/dbname` for `DATABASE_URL`.
 
 ## API Endpoints
 
@@ -141,6 +144,17 @@ python main.py
 ```
 
 Credentials are cached in `token.pickle` (gitignored) for subsequent runs.
+
+## Docker
+
+    docker build -t scheduler .
+    docker run -e SECRET_KEY=... -e DATABASE_URL=... \
+      -v $(pwd)/credentials.json:/app/credentials.json:ro -p 5000:5000 scheduler
+
+The image runs `flask db upgrade` at startup, then starts gunicorn on port 5000.
+
+CI publishes `ghcr.io/shawila/scheduler` on push to master and deploys via
+`/opt/infra` compose. Repo secrets required: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`.
 
 ## Running Tests
 
