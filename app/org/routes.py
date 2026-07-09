@@ -16,6 +16,20 @@ org_bp = Blueprint('org', __name__, url_prefix='/org')
 ROLE_RANK = {'employee': 1, 'manager': 2, 'owner': 3}
 
 
+@org_bp.route('/me', methods=['GET'])
+@require_auth
+def my_org():
+    member = OrganizationMember.query.filter_by(user_id=g.current_user.id).first()
+    if not member:
+        return jsonify({'error': 'Not a member of any org'}), 404
+    org = Organization.query.get(member.org_id)
+    return jsonify({
+        'org_id': org.id,
+        'name': org.name,
+        'calendar_id': org.google_calendar_id,
+    })
+
+
 @org_bp.route('/register', methods=['POST'])
 @require_auth
 def register_org():
