@@ -1,16 +1,15 @@
 import secrets
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, g
-from googleapiclient.discovery import build
 from app.extensions import db
 from app.models.organization import Organization
 from app.models.organization_member import OrganizationMember
 from app.models.user import User
 from app.models.pending_booking import PendingBooking
 from app.models.booking import Booking
-from app.google_calendar import credentials_from_user
 from app.booking.validation import is_slot_aligned, validate_booking_duration, check_mx_record
 from app.booking.email import send_confirmation_email
+from app.booking.events import create_calendar_event
 from app.org.selection import select_admin
 from app.auth import require_auth
 
@@ -92,36 +91,12 @@ def confirm_booking(token):
 
     org = Organization.query.get(pending.org_id)
 
-    credentials = credentials_from_user(admin)
-    service = build('calendar', 'v3', credentials=credentials)
-
-    freebusy = service.freebusy().query(body={
-        'timeMin': pending.start_datetime.strftime('%Y-%m-%dT%H:%M:%SZ'),
-        'timeMax': pending.end_datetime.strftime('%Y-%m-%dT%H:%M:%SZ'),
-        'timeZone': 'UTC',
-        'items': [{'id': 'primary'}],
-    }).execute()
-
-    if freebusy['calendars']['primary'].get('busy'):
+    created_event = create_calendar_event(
+        admin, org, pending.guest_email, pending.guest_name,
+        pending.start_datetime, pending.end_datetime,
+    )
+    if not created_event:
         return jsonify({'error': 'Time slot is no longer available'}), 409
-
-    event_body = {
-        'summary': 'Appointment',
-        'start': {'dateTime': pending.start_datetime.strftime('%Y-%m-%dT%H:%M:%SZ'), 'timeZone': 'UTC'},
-        'end': {'dateTime': pending.end_datetime.strftime('%Y-%m-%dT%H:%M:%SZ'), 'timeZone': 'UTC'},
-        'attendees': [{'email': pending.guest_email, 'displayName': pending.guest_name}],
-    }
-    created_event = service.events().insert(
-        calendarId='primary',
-        body=event_body,
-        sendUpdates='all',
-    ).execute()
-
-    service.events().insert(
-        calendarId=org.google_calendar_id,
-        body={**event_body, 'attendees': []},
-        sendUpdates='none',
-    ).execute()
 
     booking = Booking(
         google_event_id=created_event['id'],

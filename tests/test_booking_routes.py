@@ -152,7 +152,7 @@ class TestConfirmBooking:
 
     def test_valid_token_returns_200_with_event_details(self, client, app, authed_user, org_with_owner):
         make_pending(app, org_with_owner, authed_user.id)
-        with patch('app.booking.routes.build', return_value=mock_calendar_service()):
+        with patch('app.booking.events.build', return_value=mock_calendar_service()):
             response = client.get('/confirm-booking/valid-token-abc')
         assert response.status_code == 200
         assert response.json['event_id'] == 'google_event_123'
@@ -160,7 +160,7 @@ class TestConfirmBooking:
 
     def test_valid_token_saves_booking_record(self, client, app, authed_user, org_with_owner):
         make_pending(app, org_with_owner, authed_user.id)
-        with patch('app.booking.routes.build', return_value=mock_calendar_service()):
+        with patch('app.booking.events.build', return_value=mock_calendar_service()):
             client.get('/confirm-booking/valid-token-abc')
         with app.app_context():
             booking = Booking.query.filter_by(guest_email='guest@example.com').first()
@@ -170,7 +170,7 @@ class TestConfirmBooking:
 
     def test_valid_token_deletes_pending_booking(self, client, app, authed_user, org_with_owner):
         make_pending(app, org_with_owner, authed_user.id)
-        with patch('app.booking.routes.build', return_value=mock_calendar_service()):
+        with patch('app.booking.events.build', return_value=mock_calendar_service()):
             client.get('/confirm-booking/valid-token-abc')
         with app.app_context():
             assert PendingBooking.query.filter_by(confirmation_token='valid-token-abc').first() is None
@@ -201,14 +201,14 @@ class TestConfirmBooking:
                 {'start': '2024-08-01T11:00:00Z', 'end': '2024-08-01T12:30:00Z'}
             ]}}
         }
-        with patch('app.booking.routes.build', return_value=busy_service):
+        with patch('app.booking.events.build', return_value=busy_service):
             response = client.get('/confirm-booking/valid-token-abc')
         assert response.status_code == 409
 
     def test_event_written_to_admin_and_org_calendar(self, client, app, authed_user, org_with_owner):
         make_pending(app, org_with_owner, authed_user.id)
         service = mock_calendar_service()
-        with patch('app.booking.routes.build', return_value=service):
+        with patch('app.booking.events.build', return_value=service):
             client.get('/confirm-booking/valid-token-abc')
         # First insert: admin personal calendar (sendUpdates='all')
         first_call_kwargs = service.events().insert.call_args_list[0][1]
