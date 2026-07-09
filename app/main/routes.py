@@ -1,6 +1,7 @@
 import secrets
 from datetime import datetime, timedelta
-from flask import Blueprint, request, jsonify, g
+from urllib.parse import urlparse, urlencode
+from flask import Blueprint, request, jsonify, g, session, redirect, current_app
 from googleapiclient.discovery import build
 from app.google_calendar import credentials_from_user, build_oauth_flow
 from app.models.user import User
@@ -13,6 +14,29 @@ main_bp = Blueprint('main', __name__)
 
 if os.getenv('FLASK_ENV') == 'development':
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
+
+@main_bp.route('/connect')
+def connect():
+    redirect_uri = request.args.get('redirect_uri', '')
+    state = request.args.get('state', '')
+    if not redirect_uri or not state:
+        return jsonify({'error': 'redirect_uri and state are required'}), 400
+
+    allowed_hosts = current_app.config['ALLOWED_REDIRECT_HOSTS'].split(',')
+    if urlparse(redirect_uri).netloc not in allowed_hosts:
+        return jsonify({'error': 'redirect_uri host not allowed'}), 400
+
+    session['connect_redirect_uri'] = redirect_uri
+    session['connect_state'] = state
+
+    flow = build_oauth_flow()
+    auth_url, _ = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true',
+        prompt='consent',
+    )
+    return redirect(auth_url)
 
 
 @main_bp.route('/callback')
@@ -44,6 +68,20 @@ def callback():
 
     user.api_token = secrets.token_urlsafe(32)
     db.session.commit()
+
+    connect_redirect_uri = session.pop('connect_redirect_uri', None)
+    connect_state = session.pop('connect_state', None)
+    if connect_redirect_uri:
+        code = secrets.token_urlsafe(32)
+        db.session.add(ExchangeCode(
+            code=code,
+            user_id=user.id,
+            expires_at=datetime.utcnow() + timedelta(minutes=5),
+        ))
+        db.session.commit()
+        query = urlencode({'code': code, 'state': connect_state})
+        return redirect(f'{connect_redirect_uri}?{query}')
+
     return jsonify({'token': user.api_token})
 
 
