@@ -1,4 +1,4 @@
-# scheduler-python
+# scheduler
 
 A Flask web app that integrates with Google Calendar via OAuth 2.0. Users connect their Google account, and the app stores their credentials to query busy hours on demand.
 
@@ -22,7 +22,7 @@ Also includes a standalone CLI script (`main.py`) that prints free 30-minute slo
 ```bash
 # 1. Clone and enter the repo
 git clone <repo-url>
-cd scheduler-python
+cd scheduler
 
 # 2. Create and activate a virtual environment
 python3 -m venv .venv
@@ -153,7 +153,7 @@ Tests cover `app/slots.py` (pure slot computation logic) and require no Google A
 ## Project Structure
 
 ```
-scheduler-python/
+scheduler/
 ├── app/
 │   ├── __init__.py        # Flask app factory
 │   ├── config.py          # Configuration from environment
