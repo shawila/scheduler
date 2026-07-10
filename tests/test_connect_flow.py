@@ -44,6 +44,13 @@ class TestConnect:
         assert response.status_code == 302
         assert response.headers['Location'].startswith('https://accounts.google.com')
 
+    def test_comma_separated_hosts_tolerate_whitespace(self, client, app):
+        app.config['ALLOWED_REDIRECT_HOSTS'] = 'localhost:3030, dashboard.example.com'
+        with patch('app.main.routes.build_oauth_flow', return_value=mock_flow()):
+            response = client.get('/connect', query_string={
+                'redirect_uri': 'https://dashboard.example.com/callback', 'state': 's'})
+        assert response.status_code == 302
+
 
 class TestCallbackRedirectBranch:
     def _oauth_patches(self):

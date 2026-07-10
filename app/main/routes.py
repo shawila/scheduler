@@ -23,7 +23,7 @@ def connect():
     if not redirect_uri or not state:
         return jsonify({'error': 'redirect_uri and state are required'}), 400
 
-    allowed_hosts = current_app.config['ALLOWED_REDIRECT_HOSTS'].split(',')
+    allowed_hosts = [h.strip() for h in current_app.config['ALLOWED_REDIRECT_HOSTS'].split(',')]
     if urlparse(redirect_uri).netloc not in allowed_hosts:
         return jsonify({'error': 'redirect_uri host not allowed'}), 400
 

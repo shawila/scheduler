@@ -9,3 +9,4 @@ instance
 *.db
 credentials.json
 docs
+.env
