@@ -56,6 +56,7 @@ python run.py
 | `PPS_AUTH_BASE_URL` | `http://localhost:4000` | pps_auth base URL for Google token exchange |
 | `SCHEDULER_PPS_CLIENT_ID` | `scheduler` | pps_auth client id for the exchange |
 | `SCHEDULER_PPS_CLIENT_SECRET` | — | pps_auth client secret (from `cargo run --bin seed`) |
+| `HATAN_SERVICE_TOKEN` | — | shared secret for `/org/register-external` (same value in hatan) |
 
 For production, use `postgresql://user:pass@host:5432/dbname` for `DATABASE_URL`.
 

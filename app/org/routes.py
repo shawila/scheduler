@@ -1,3 +1,5 @@
+import hmac
+import os
 import secrets
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, session, redirect, g
@@ -64,6 +66,25 @@ def availability(org_uid):
     return jsonify({'slots': compute_available_slots(members_busy, date)})
 
 
+def _create_org_with_calendar(user, org_name, owner_email):
+    credentials = google_credentials_for(user)
+    service = build('calendar', 'v3', credentials=credentials)
+
+    calendar = service.calendars().insert(body={'summary': org_name}).execute()
+    calendar_id = calendar['id']
+
+    service.acl().insert(
+        calendarId=calendar_id,
+        body={'role': 'owner', 'scope': {'type': 'user', 'value': owner_email}},
+    ).execute()
+
+    org = Organization(name=org_name, google_calendar_id=calendar_id)
+    db.session.add(org)
+    db.session.flush()
+    db.session.add(OrganizationMember(org_id=org.id, user_id=user.id, role='owner', priority=1))
+    return org
+
+
 @org_bp.route('/register', methods=['POST'])
 @require_auth
 def register_org():
@@ -75,26 +96,46 @@ def register_org():
     if OrganizationMember.query.filter_by(user_id=g.current_user.id).first():
         return jsonify({'error': 'Already belong to an org'}), 400
 
-    credentials = google_credentials_for(g.current_user)
-    service = build('calendar', 'v3', credentials=credentials)
-
-    calendar = service.calendars().insert(body={'summary': org_name}).execute()
-    calendar_id = calendar['id']
-
-    service.acl().insert(
-        calendarId=calendar_id,
-        body={'role': 'owner', 'scope': {'type': 'user', 'value': g.current_user.email}},
-    ).execute()
-
-    org = Organization(name=org_name, google_calendar_id=calendar_id)
-    db.session.add(org)
-    db.session.flush()
-
-    member = OrganizationMember(org_id=org.id, user_id=g.current_user.id, role='owner', priority=1)
-    db.session.add(member)
+    org = _create_org_with_calendar(g.current_user, org_name, g.current_user.email)
     db.session.commit()
 
     return jsonify({'org_id': org.id, 'calendar_id': org.google_calendar_id}), 201
+
+
+@org_bp.route('/register-external', methods=['POST'])
+def register_external():
+    expected = os.getenv('HATAN_SERVICE_TOKEN', '')
+    provided = request.headers.get('X-Service-Token', '')
+    if not expected or not hmac.compare_digest(provided, expected):
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    data = request.get_json() or {}
+    required = ['org_name', 'pps_user_id', 'email']
+    missing = [f for f in required if not data.get(f)]
+    if missing:
+        return jsonify({'error': f'Missing fields: {", ".join(missing)}'}), 400
+
+    user = (User.query.filter_by(pps_user_id=data['pps_user_id']).first()
+            or User.query.filter_by(email=data['email']).first())
+    if user:
+        user.pps_user_id = user.pps_user_id or data['pps_user_id']
+    else:
+        user = User(email=data['email'], pps_user_id=data['pps_user_id'])
+        db.session.add(user)
+    user.api_token = secrets.token_urlsafe(32)
+    db.session.flush()
+
+    member = OrganizationMember.query.filter_by(user_id=user.id).first()
+    if member:
+        org = Organization.query.get(member.org_id)
+        db.session.commit()
+        return jsonify({'org_id': org.id, 'calendar_id': org.google_calendar_id,
+                        'api_token': user.api_token}), 200
+
+    org = _create_org_with_calendar(user, data['org_name'], data['email'])
+    db.session.commit()
+    return jsonify({'org_id': org.id, 'calendar_id': org.google_calendar_id,
+                    'api_token': user.api_token}), 201
 
 
 @org_bp.route('/<int:org_uid>/invite', methods=['POST'])
