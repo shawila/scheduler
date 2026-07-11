@@ -7,7 +7,7 @@ from app.models.organization import Organization
 from app.models.organization_member import OrganizationMember
 from app.models.organization_invite import OrganizationInvite
 from app.models.user import User
-from app.google_calendar import credentials_from_user, build_oauth_flow, INVITE_REDIRECT_URI
+from app.google_calendar import google_credentials_for, build_oauth_flow, INVITE_REDIRECT_URI
 from app.auth import require_auth
 from app.org.email import send_invite_email
 from app.slots import compute_available_slots
@@ -51,7 +51,7 @@ def availability(org_uid):
 
     members_busy = []
     for member in members:
-        credentials = credentials_from_user(member.user)
+        credentials = google_credentials_for(member.user)
         service = build('calendar', 'v3', credentials=credentials)
         freebusy = service.freebusy().query(body={
             'timeMin': time_min,
@@ -75,7 +75,7 @@ def register_org():
     if OrganizationMember.query.filter_by(user_id=g.current_user.id).first():
         return jsonify({'error': 'Already belong to an org'}), 400
 
-    credentials = credentials_from_user(g.current_user)
+    credentials = google_credentials_for(g.current_user)
     service = build('calendar', 'v3', credentials=credentials)
 
     calendar = service.calendars().insert(body={'summary': org_name}).execute()
@@ -227,7 +227,7 @@ def join_callback():
     org = Organization.query.get(invite.org_id)
     owner_member = OrganizationMember.query.filter_by(org_id=invite.org_id, role='owner').first()
     if owner_member:
-        owner_creds = credentials_from_user(owner_member.user)
+        owner_creds = google_credentials_for(owner_member.user)
         cal_service = build('calendar', 'v3', credentials=owner_creds)
         cal_service.acl().insert(
             calendarId=org.google_calendar_id,

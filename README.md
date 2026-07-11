@@ -53,6 +53,9 @@ python run.py
 | `DATABASE_URL` | `sqlite:///app.db`  | SQLAlchemy connection string                 |
 | `PORT`         | `3032`              | Dev server port (`python run.py` only — production gunicorn stays on 5000) |
 | `ALLOWED_REDIRECT_HOSTS` | `localhost:3030` | Comma-separated hosts allowed as `/connect` redirect targets |
+| `PPS_AUTH_BASE_URL` | `http://localhost:4000` | pps_auth base URL for Google token exchange |
+| `SCHEDULER_PPS_CLIENT_ID` | `scheduler` | pps_auth client id for the exchange |
+| `SCHEDULER_PPS_CLIENT_SECRET` | — | pps_auth client secret (from `cargo run --bin seed`) |
 
 For production, use `postgresql://user:pass@host:5432/dbname` for `DATABASE_URL`.
 

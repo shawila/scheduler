@@ -1,12 +1,12 @@
 from googleapiclient.discovery import build
-from app.google_calendar import credentials_from_user
+from app.google_calendar import google_credentials_for
 
 
 def create_calendar_event(admin, org, guest_email, guest_name, start_dt, end_dt):
     """Insert the event on the admin's primary calendar (guest invited) and
     mirror it on the org's shared calendar. Returns the created primary
     event, or None if the slot is busy."""
-    credentials = credentials_from_user(admin)
+    credentials = google_credentials_for(admin)
     service = build('calendar', 'v3', credentials=credentials)
 
     freebusy = service.freebusy().query(body={

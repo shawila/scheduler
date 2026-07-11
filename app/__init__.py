@@ -23,6 +23,17 @@ def create_app(config_override=None):
     from app.org.routes import org_bp
     app.register_blueprint(org_bp)
 
+    from flask import jsonify
+    from app.pps_auth import GrantRevoked, PpsAuthError
+
+    @app.errorhandler(GrantRevoked)
+    def handle_grant_revoked(exc):
+        return jsonify({'error': 'google grant revoked'}), 401
+
+    @app.errorhandler(PpsAuthError)
+    def handle_pps_auth_error(exc):
+        return jsonify({'error': 'calendar token service unavailable'}), 503
+
     with app.app_context():
         from app.models.pending_booking import PendingBooking  # noqa: F401
         from app.models.booking import Booking  # noqa: F401

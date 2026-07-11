@@ -27,14 +27,14 @@ class TestSelectAdmin:
         m1, svc1 = make_member(1, priority=1, busy=True)
         m2, svc2 = make_member(2, priority=2, busy=True)
         with patch('app.org.selection.build', side_effect=[svc1, svc2]), \
-             patch('app.org.selection.credentials_from_user', return_value=MagicMock()):
+             patch('app.org.selection.google_credentials_for', return_value=MagicMock()):
             result = select_admin([m1, m2], START, END)
         assert result is None
 
     def test_returns_free_admin(self):
         m1, svc1 = make_member(1, priority=1, busy=False)
         with patch('app.org.selection.build', return_value=svc1), \
-             patch('app.org.selection.credentials_from_user', return_value=MagicMock()):
+             patch('app.org.selection.google_credentials_for', return_value=MagicMock()):
             result = select_admin([m1], START, END)
         assert result is m1.user
 
@@ -42,7 +42,7 @@ class TestSelectAdmin:
         m1, svc1 = make_member(1, priority=1, busy=False)
         m2, svc2 = make_member(2, priority=3, busy=False)
         with patch('app.org.selection.build', side_effect=[svc1, svc2]), \
-             patch('app.org.selection.credentials_from_user', return_value=MagicMock()):
+             patch('app.org.selection.google_credentials_for', return_value=MagicMock()):
             result = select_admin([m1, m2], START, END)
         assert result is m2.user
 
@@ -52,7 +52,7 @@ class TestSelectAdmin:
         results = set()
         for _ in range(20):
             with patch('app.org.selection.build', side_effect=[svc1, svc2]), \
-                 patch('app.org.selection.credentials_from_user', return_value=MagicMock()):
+                 patch('app.org.selection.google_credentials_for', return_value=MagicMock()):
                 result = select_admin([m1, m2], START, END)
                 results.add(result.id)
         assert len(results) == 2
@@ -61,7 +61,7 @@ class TestSelectAdmin:
         m1, svc1 = make_member(1, priority=5, busy=False)
         m2, svc2 = make_member(2, priority=1, busy=False)
         with patch('app.org.selection.build', side_effect=[svc1, svc2]), \
-             patch('app.org.selection.credentials_from_user', return_value=MagicMock()):
+             patch('app.org.selection.google_credentials_for', return_value=MagicMock()):
             result = select_admin([m1, m2], START, END, preferred_user_id=2)
         assert result.id == 2
 
@@ -69,6 +69,6 @@ class TestSelectAdmin:
         m1, svc1 = make_member(1, priority=5, busy=False)
         m2, svc2 = make_member(2, priority=1, busy=True)
         with patch('app.org.selection.build', side_effect=[svc1, svc2]), \
-             patch('app.org.selection.credentials_from_user', return_value=MagicMock()):
+             patch('app.org.selection.google_credentials_for', return_value=MagicMock()):
             result = select_admin([m1, m2], START, END, preferred_user_id=2)
         assert result is None

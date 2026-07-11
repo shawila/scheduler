@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from urllib.parse import urlparse, urlencode
 from flask import Blueprint, request, jsonify, g, session, redirect, current_app
 from googleapiclient.discovery import build
-from app.google_calendar import credentials_from_user, build_oauth_flow
+from app.google_calendar import google_credentials_for, build_oauth_flow
 from app.models.user import User
 from app.models.exchange_code import ExchangeCode
 from app.auth import require_auth
@@ -102,7 +102,7 @@ def get_busy_hours():
     if not user:
         return jsonify({'error': 'User not found'}), 404
 
-    credentials = credentials_from_user(user)
+    credentials = google_credentials_for(user)
     service = build('calendar', 'v3', credentials=credentials)
 
     time_min = date.strftime('%Y-%m-%dT00:00:00Z')

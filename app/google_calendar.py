@@ -2,6 +2,7 @@ import os
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 from app.models.user import User
+from app.pps_auth import fetch_google_access_token
 
 CLIENT_SECRETS_FILE = "credentials.json"
 SCOPES = [
@@ -30,3 +31,11 @@ def credentials_from_user(user: User) -> Credentials:
         client_secret=user.client_secret,
         scopes=user.scopes.split(','),
     )
+
+
+def google_credentials_for(user) -> Credentials:
+    """Broker-backed users (pps_user_id set) get a short-lived token from
+    pps_auth; legacy users keep their stored refresh-token credentials."""
+    if user.pps_user_id:
+        return Credentials(token=fetch_google_access_token(user.pps_user_id))
+    return credentials_from_user(user)

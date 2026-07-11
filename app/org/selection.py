@@ -1,12 +1,12 @@
 import random
 from googleapiclient.discovery import build
-from app.google_calendar import credentials_from_user
+from app.google_calendar import google_credentials_for
 
 
 def select_admin(members, start_dt, end_dt, preferred_user_id=None):
     free_members = []
     for member in members:
-        credentials = credentials_from_user(member.user)
+        credentials = google_credentials_for(member.user)
         service = build('calendar', 'v3', credentials=credentials)
         freebusy = service.freebusy().query(body={
             'timeMin': start_dt.strftime('%Y-%m-%dT%H:%M:%SZ'),
