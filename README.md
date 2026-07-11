@@ -40,7 +40,7 @@ cp .env.example .env
 # 6. Run database migrations
 flask db upgrade
 
-# 7. Start the server
+# 7. Start the server (dev listens on http://127.0.0.1:3032)
 python run.py
 ```
 
@@ -51,6 +51,7 @@ python run.py
 | `FLASK_ENV`    | —                   | Set to `development` to allow HTTP for OAuth |
 | `SECRET_KEY`   | `your-secret-key`   | Flask session secret — change before deploy  |
 | `DATABASE_URL` | `sqlite:///app.db`  | SQLAlchemy connection string                 |
+| `PORT`         | `3032`              | Dev server port (`python run.py` only — production gunicorn stays on 5000) |
 | `ALLOWED_REDIRECT_HOSTS` | `localhost:3030` | Comma-separated hosts allowed as `/connect` redirect targets |
 
 For production, use `postgresql://user:pass@host:5432/dbname` for `DATABASE_URL`.
