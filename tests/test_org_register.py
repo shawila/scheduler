@@ -58,4 +58,6 @@ class TestPostOrgRegister:
         with patch('app.org.routes.build', return_value=service):
             client.post('/org/register', json={'org_name': 'My Org'}, headers=auth())
         service.calendars.return_value.insert.assert_called_once()
-        service.acl.return_value.insert.assert_called_once()
+        # Creator already owns the calendar; a self-ACL grant is rejected by
+        # Google ("Cannot change your own access level") and must be skipped.
+        service.acl.return_value.insert.assert_not_called()

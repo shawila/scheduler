@@ -85,3 +85,12 @@ class TestRegisterExternal:
         assert resp.status_code == 201
         with app.app_context():
             assert User.query.filter_by(email='store@example.com').first().pps_user_id == 'uuid-1'
+
+    def test_skips_acl_grant_when_creator_is_owner(self, client, monkeypatch):
+        monkeypatch.setenv('HATAN_SERVICE_TOKEN', 'service-secret')
+        service = calendar_service()
+        with patch('app.org.routes.google_credentials_for', return_value=MagicMock()), \
+             patch('app.org.routes.build', return_value=service):
+            resp = self._post(client)
+        assert resp.status_code == 201
+        service.acl().insert.assert_not_called()

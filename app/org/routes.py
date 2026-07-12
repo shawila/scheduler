@@ -73,10 +73,13 @@ def _create_org_with_calendar(user, org_name, owner_email):
     calendar = service.calendars().insert(body={'summary': org_name}).execute()
     calendar_id = calendar['id']
 
-    service.acl().insert(
-        calendarId=calendar_id,
-        body={'role': 'owner', 'scope': {'type': 'user', 'value': owner_email}},
-    ).execute()
+    # The creator already owns the calendar; Google rejects self-ACL changes
+    # with "Cannot change your own access level".
+    if (user.email or '').lower() != owner_email.lower():
+        service.acl().insert(
+            calendarId=calendar_id,
+            body={'role': 'owner', 'scope': {'type': 'user', 'value': owner_email}},
+        ).execute()
 
     org = Organization(name=org_name, google_calendar_id=calendar_id)
     db.session.add(org)
