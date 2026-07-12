@@ -220,6 +220,14 @@ class TestConfirmBooking:
         assert second_call_kwargs['calendarId'] == 'org-cal-id'
         assert second_call_kwargs['sendUpdates'] == 'none'
 
+    def test_event_summary_includes_guest_name(self, client, app, authed_user, org_with_owner):
+        make_pending(app, org_with_owner, authed_user.id)
+        service = mock_calendar_service()
+        with patch('app.booking.events.build', return_value=service):
+            client.get('/confirm-booking/valid-token-abc')
+        body = service.events().insert.call_args_list[0][1]['body']
+        assert body['summary'] == 'Appointment — John Doe'
+
 
 CONFIRMED_EVENT = {
     'id': 'google_event_direct',

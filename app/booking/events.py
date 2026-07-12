@@ -19,7 +19,7 @@ def create_calendar_event(admin, org, guest_email, guest_name, start_dt, end_dt)
         return None
 
     event_body = {
-        'summary': 'Appointment',
+        'summary': f'Appointment — {guest_name}',
         'start': {'dateTime': start_dt.strftime('%Y-%m-%dT%H:%M:%SZ'), 'timeZone': 'UTC'},
         'end': {'dateTime': end_dt.strftime('%Y-%m-%dT%H:%M:%SZ'), 'timeZone': 'UTC'},
         'attendees': [{'email': guest_email, 'displayName': guest_name}],
