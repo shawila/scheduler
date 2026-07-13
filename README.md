@@ -18,7 +18,8 @@ Google Calendar.
 
 - Python 3.9+
 - A Google Cloud project with the **Google Calendar API** and **Google OAuth 2.0** enabled
-- A `credentials.json` file downloaded from the Google Cloud Console (OAuth 2.0 Client ID, Desktop or Web type)
+- A Google OAuth 2.0 Client ID (Web type) — its client ID/secret are supplied via
+  `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` env vars, not a downloaded file
 
 ## Setup
 
@@ -36,14 +37,12 @@ pip install -r requirements.txt
 
 # 4. Configure environment variables
 cp .env.example .env
-# Edit .env and set SECRET_KEY to a random string
+# Edit .env and set SECRET_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
 
-# 5. Place your credentials.json in the project root (do not commit it)
-
-# 6. Run database migrations
+# 5. Run database migrations
 flask db upgrade
 
-# 7. Start the server (dev listens on http://127.0.0.1:3032)
+# 6. Start the server (dev listens on http://127.0.0.1:3032)
 python run.py
 ```
 
@@ -60,6 +59,8 @@ python run.py
 | `MAIL_USERNAME`               | —                          | SMTP username / default sender                                     |
 | `MAIL_PASSWORD`               | —                          | SMTP password                                                      |
 | `BOOKING_CONFIRM_BASE_URL`    | `http://localhost:5000`    | Base URL used to build confirmation/invite links in emails          |
+| `GOOGLE_CLIENT_ID`            | —                          | Google OAuth 2.0 client id (Web type) — used by the direct-OAuth invite/join flow and the 401 `auth_url` |
+| `GOOGLE_CLIENT_SECRET`        | —                          | Google OAuth 2.0 client secret — pair of `GOOGLE_CLIENT_ID`         |
 | `PPS_AUTH_BASE_URL`           | `http://localhost:4000`    | `pps_auth` base URL for Google token exchange                       |
 | `SCHEDULER_PPS_CLIENT_ID`     | `scheduler`                | `pps_auth` client id for the exchange                               |
 | `SCHEDULER_PPS_CLIENT_SECRET` | —                          | `pps_auth` client secret (from `cargo run --bin seed`)              |
@@ -131,7 +132,7 @@ None — the standalone `main.py` CLI script was removed; use `python run.py` an
 
     docker build -t scheduler .
     docker run -e SECRET_KEY=... -e DATABASE_URL=... \
-      -v $(pwd)/credentials.json:/app/credentials.json:ro -p 5000:5000 scheduler
+      -e GOOGLE_CLIENT_ID=... -e GOOGLE_CLIENT_SECRET=... -p 5000:5000 scheduler
 
 The image runs `flask db upgrade` at startup, then starts gunicorn on port 5000.
 

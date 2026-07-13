@@ -16,3 +16,14 @@ Cross-checked against hatan's `Scheduler::Client` (`app/services/scheduler/clien
 - **Pending-booking / email-confirmation flow is unreachable via hatan (for now)**: hatan's `Calendar::BookingsController#create` always calls `POST /book` with `confirmed: true` (see `app/controllers/calendar/bookings_controller.rb` in hatan), so the `PendingBooking` model, `GET /confirm-booking/<token>`, and `send_confirmation_email` are currently never exercised by hatan. **Update (2026-07-13): hatan is planning to build guest-facing email-confirmation booking next**, i.e. a path that calls `POST /book` with `confirmed: false` (or omitted) and relies on `GET /confirm-booking/<token>` to complete the booking. Not a removal candidate — keep this flow as-is and expect hatan-side integration work to land soon. Worth double-checking the flow end-to-end (confirmation email content/links, `BOOKING_CONFIRM_BASE_URL`, token expiry) before hatan wires it up.
 
 Already removed (2026-07-13): the original direct-OAuth connect flow (`GET /connect`, `GET /callback`, `POST /token/exchange`, `POST /org/register`, `ExchangeCode` model) — confirmed fully superseded by the `pps_auth` broker flow (`register-external`) per hatan's own `2026-07-11-ppsauth-google-token-broker-design.md`, and unused by any hatan code path.
+
+## Direct-OAuth surface is a deprecation candidate (2026-07-13)
+
+`credentials.json` was replaced with `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` env vars in `build_oauth_flow()` (`app/google_calendar.py`) this session — a mechanical swap, not a scope change. But tracing the full hatan admin-connects-a-calendar flow during that work confirmed the same conclusion as the audit above from the *other* direction: hatan's calendar-connect UI goes entirely through OmniAuth → pps_auth → `POST /org/register-external`, and never touches scheduler's own OAuth endpoints. Combined with the "Team invite/role-management flow is unused" finding above, this means the following are all one dead-code cluster once hatan's team-management UI is confirmed as never landing:
+
+- `build_oauth_flow()` / `generate_auth_url()` (`app/auth.py`) — the direct-OAuth URL built into every `require_auth` 401 response
+- `GET /org/<id>/join/<token>`, `GET /org/join-callback` (`app/org/routes.py`) — the invite-accept OAuth handshake
+- `User.token`/`refresh_token`/`token_uri`/`client_id`/`client_secret` columns — only ever populated by the above
+- The `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` env vars themselves and their Google Cloud OAuth Client registration
+
+Not removing now since the invite/join flow is still kept intentionally per the audit above — but if that flow is ever confirmed dead, this whole direct-OAuth surface should go with it in the same pass.

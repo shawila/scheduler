@@ -7,7 +7,6 @@ from app.pps_auth import fetch_google_access_token
 if os.getenv('FLASK_ENV') == 'development':
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
-CLIENT_SECRETS_FILE = "credentials.json"
 SCOPES = [
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/userinfo.email",
@@ -18,8 +17,16 @@ INVITE_REDIRECT_URI = os.getenv('OAUTH_INVITE_REDIRECT_URI', 'http://localhost:5
 
 
 def build_oauth_flow(redirect_uri=None):
-    return Flow.from_client_secrets_file(
-        CLIENT_SECRETS_FILE,
+    client_config = {
+        "web": {
+            "client_id": os.environ['GOOGLE_CLIENT_ID'],
+            "client_secret": os.environ['GOOGLE_CLIENT_SECRET'],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+        }
+    }
+    return Flow.from_client_config(
+        client_config,
         scopes=SCOPES,
         redirect_uri=redirect_uri or REDIRECT_URI,
     )
