@@ -97,23 +97,6 @@ def _create_org_with_calendar(user, org_name, owner_email):
     return org
 
 
-@org_bp.route('/register', methods=['POST'])
-@require_auth
-def register_org():
-    data = request.get_json() or {}
-    org_name = data.get('org_name', '').strip()
-    if not org_name:
-        return jsonify({'error': 'org_name is required'}), 400
-
-    if OrganizationMember.query.filter_by(user_id=g.current_user.id).first():
-        return jsonify({'error': 'Already belong to an org'}), 400
-
-    org = _create_org_with_calendar(g.current_user, org_name, g.current_user.email)
-    db.session.commit()
-
-    return jsonify({'org_id': org.id, 'calendar_id': org.google_calendar_id}), 201
-
-
 @org_bp.route('/register-external', methods=['POST'])
 def register_external():
     expected = os.getenv('HATAN_SERVICE_TOKEN', '')

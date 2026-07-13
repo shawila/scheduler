@@ -40,7 +40,6 @@ def create_app(config_override=None):
         from app.models.organization import Organization  # noqa: F401
         from app.models.organization_member import OrganizationMember  # noqa: F401
         from app.models.organization_invite import OrganizationInvite  # noqa: F401
-        from app.models.exchange_code import ExchangeCode  # noqa: F401
         if app.config.get('TESTING'):
             db.create_all()
 

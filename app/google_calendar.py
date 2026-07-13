@@ -4,6 +4,9 @@ from google.oauth2.credentials import Credentials
 from app.models.user import User
 from app.pps_auth import fetch_google_access_token
 
+if os.getenv('FLASK_ENV') == 'development':
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
 CLIENT_SECRETS_FILE = "credentials.json"
 SCOPES = [
     "https://www.googleapis.com/auth/calendar",

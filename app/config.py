@@ -14,4 +14,3 @@ class Config:
     MAIL_DEFAULT_SENDER = os.getenv('MAIL_USERNAME')
 
     BOOKING_CONFIRM_BASE_URL = os.getenv('BOOKING_CONFIRM_BASE_URL', 'http://localhost:5000')
-    ALLOWED_REDIRECT_HOSTS = os.getenv('ALLOWED_REDIRECT_HOSTS', 'localhost:3030')
