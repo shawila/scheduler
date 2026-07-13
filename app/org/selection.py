@@ -1,6 +1,7 @@
 import random
 from googleapiclient.discovery import build
 from app.google_calendar import google_credentials_for
+from app.slots import to_google_utc
 
 
 def select_admin(members, start_dt, end_dt, preferred_user_id=None):
@@ -9,8 +10,8 @@ def select_admin(members, start_dt, end_dt, preferred_user_id=None):
         credentials = google_credentials_for(member.user)
         service = build('calendar', 'v3', credentials=credentials)
         freebusy = service.freebusy().query(body={
-            'timeMin': start_dt.strftime('%Y-%m-%dT%H:%M:%SZ'),
-            'timeMax': end_dt.strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'timeMin': to_google_utc(start_dt),
+            'timeMax': to_google_utc(end_dt),
             'timeZone': 'UTC',
             'items': [{'id': 'primary'}],
         }).execute()

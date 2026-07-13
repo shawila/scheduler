@@ -1,5 +1,6 @@
 from unittest.mock import patch, MagicMock
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from app.org.selection import select_admin
 
 START = datetime(2024, 8, 1, 11, 0, 0)
@@ -72,3 +73,16 @@ class TestSelectAdmin:
              patch('app.org.selection.google_credentials_for', return_value=MagicMock()):
             result = select_admin([m1, m2], START, END, preferred_user_id=2)
         assert result is None
+
+
+class TestSelectAdminTimezone:
+    def test_converts_aware_local_datetimes_to_utc_instant(self):
+        start = datetime(2024, 8, 1, 0, 0, tzinfo=ZoneInfo('Asia/Tokyo'))
+        end = datetime(2024, 8, 1, 0, 30, tzinfo=ZoneInfo('Asia/Tokyo'))
+        m1, svc1 = make_member(1, priority=1, busy=False)
+        with patch('app.org.selection.build', return_value=svc1), \
+             patch('app.org.selection.google_credentials_for', return_value=MagicMock()):
+            select_admin([m1], start, end)
+        call_kwargs = svc1.freebusy().query.call_args[1]
+        assert call_kwargs['body']['timeMin'] == '2024-07-31T15:00:00Z'
+        assert call_kwargs['body']['timeMax'] == '2024-07-31T15:30:00Z'
