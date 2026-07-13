@@ -2,6 +2,7 @@ import hmac
 import os
 import secrets
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from flask import Blueprint, request, jsonify, session, redirect, g
 from googleapiclient.discovery import build
 from app.extensions import db
@@ -12,7 +13,7 @@ from app.models.user import User
 from app.google_calendar import google_credentials_for, build_oauth_flow, INVITE_REDIRECT_URI
 from app.auth import require_auth
 from app.org.email import send_invite_email
-from app.slots import compute_available_slots
+from app.slots import compute_available_slots, to_google_utc
 
 org_bp = Blueprint('org', __name__, url_prefix='/org')
 
@@ -36,6 +37,12 @@ def my_org():
 @org_bp.route('/<int:org_uid>/availability', methods=['GET'])
 @require_auth
 def availability(org_uid):
+    tz = request.args.get('tz', 'UTC')
+    try:
+        zone = ZoneInfo(tz)
+    except ZoneInfoNotFoundError:
+        return jsonify({'error': f'Unknown timezone: {tz}'}), 400
+
     try:
         date = datetime.strptime(request.args.get('date', ''), '%Y-%m-%d')
     except ValueError:
@@ -48,8 +55,10 @@ def availability(org_uid):
         return jsonify({'error': 'Not a member of this org'}), 403
 
     members = OrganizationMember.query.filter_by(org_id=org_uid).all()
-    time_min = date.strftime('%Y-%m-%dT00:00:00Z')
-    time_max = (date + timedelta(days=1)).strftime('%Y-%m-%dT00:00:00Z')
+    local_start = datetime(date.year, date.month, date.day, tzinfo=zone)
+    local_end = local_start + timedelta(days=1)
+    time_min = to_google_utc(local_start)
+    time_max = to_google_utc(local_end)
 
     members_busy = []
     for member in members:
@@ -63,7 +72,7 @@ def availability(org_uid):
         }).execute()
         members_busy.append(freebusy['calendars']['primary'].get('busy', []))
 
-    return jsonify({'slots': compute_available_slots(members_busy, date)})
+    return jsonify({'slots': compute_available_slots(members_busy, date, tz)})
 
 
 def _create_org_with_calendar(user, org_name, owner_email):

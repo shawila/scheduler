@@ -89,6 +89,31 @@ class TestAvailabilityEndpoint:
                               headers={'Authorization': 'Bearer outsider-token'})
         assert response.status_code == 403
 
+    def test_returns_slots_labeled_in_local_timezone(self, client, authed_user, org_with_owner):
+        with patch('app.org.routes.build', return_value=busy_service([])):
+            response = client.get(f'/org/{org_with_owner}/availability',
+                                  query_string={'date': '2024-08-01', 'tz': 'Asia/Tokyo'},
+                                  headers=self.auth())
+        assert response.status_code == 200
+        assert len(response.json['slots']) == 48
+
+    def test_unknown_timezone_returns_400(self, client, authed_user, org_with_owner):
+        response = client.get(f'/org/{org_with_owner}/availability',
+                              query_string={'date': '2024-08-01', 'tz': 'Not/AZone'},
+                              headers=self.auth())
+        assert response.status_code == 400
+        assert 'Unknown timezone' in response.json['error']
+
+    def test_queries_google_with_local_midnight_window_in_utc(self, client, authed_user, org_with_owner):
+        service = busy_service([])
+        with patch('app.org.routes.build', return_value=service):
+            client.get(f'/org/{org_with_owner}/availability',
+                      query_string={'date': '2024-08-01', 'tz': 'Asia/Tokyo'},
+                      headers=self.auth())
+        call_kwargs = service.freebusy().query.call_args[1]
+        assert call_kwargs['body']['timeMin'] == '2024-07-31T15:00:00Z'
+        assert call_kwargs['body']['timeMax'] == '2024-08-01T15:00:00Z'
+
 
 class TestToGoogleUtc:
     def test_naive_datetime_is_treated_as_already_utc(self):
