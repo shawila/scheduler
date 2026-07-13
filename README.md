@@ -1,15 +1,18 @@
 # scheduler
 
-A Flask web app that integrates with Google Calendar via OAuth 2.0. Users connect their Google account, and the app stores their credentials to query busy hours on demand.
-
-Also includes a standalone CLI script (`main.py`) that prints free 30-minute slots for any given day.
+A Flask API that connects organizations' Google Calendars for booking scheduling. It is
+the backend booking service consumed by [hatan](../hatan) — it manages Google OAuth
+credentials, organization/member records, and availability/booking logic against
+Google Calendar.
 
 ## Features
 
-- Google OAuth 2.0 flow: connect a calendar with one redirect
-- Stores per-user credentials in a local database (SQLite by default)
-- `GET /get-busy-hours` returns calendar events for any date
-- `app/slots.py` — pure, testable free-slot computation logic
+- Broker-backed Google Calendar access via `pps_auth`, plus a direct-OAuth invite/join flow
+  for adding org members
+- Organizations with prioritized members; bookings are routed to the best-available member
+- Merged free/busy availability across all members of an organization, in any IANA timezone
+- Direct (`confirmed: true`) or email-confirmed (pending → confirmation link) booking creation
+- Google Calendar events are created directly on the org's shared calendar
 
 ## Prerequisites
 
@@ -46,109 +49,83 @@ python run.py
 
 ## Environment Variables
 
-| Variable       | Default             | Description                                  |
-|----------------|---------------------|----------------------------------------------|
-| `FLASK_ENV`    | —                   | Set to `development` to allow HTTP for OAuth |
-| `SECRET_KEY`   | `your-secret-key`   | Flask session secret — change before deploy  |
-| `DATABASE_URL` | `sqlite:///app.db`  | SQLAlchemy connection string                 |
-| `PORT`         | `3032`              | Dev server port (`python run.py` only — production gunicorn stays on 5000) |
-| `ALLOWED_REDIRECT_HOSTS` | `localhost:3030` | Comma-separated hosts allowed as `/connect` redirect targets |
-| `PPS_AUTH_BASE_URL` | `http://localhost:4000` | pps_auth base URL for Google token exchange |
-| `SCHEDULER_PPS_CLIENT_ID` | `scheduler` | pps_auth client id for the exchange |
-| `SCHEDULER_PPS_CLIENT_SECRET` | — | pps_auth client secret (from `cargo run --bin seed`) |
-| `HATAN_SERVICE_TOKEN` | — | shared secret for `/org/register-external` (same value in hatan) |
+| Variable                     | Default                  | Description                                                       |
+|-------------------------------|---------------------------|---------------------------------------------------------------------|
+| `FLASK_ENV`                   | —                          | Set to `development` to allow HTTP for OAuth                       |
+| `SECRET_KEY`                  | `your-secret-key`          | Flask session secret — change before deploy                        |
+| `DATABASE_URL`                | `sqlite:///app.db`         | SQLAlchemy connection string                                        |
+| `PORT`                        | `3032`                     | Dev server port (`python run.py` only — production gunicorn stays on 5000) |
+| `MAIL_SERVER`                 | `smtp.gmail.com`           | SMTP server for confirmation/invite emails                          |
+| `MAIL_PORT`                   | `587`                      | SMTP port                                                           |
+| `MAIL_USERNAME`               | —                          | SMTP username / default sender                                     |
+| `MAIL_PASSWORD`               | —                          | SMTP password                                                      |
+| `BOOKING_CONFIRM_BASE_URL`    | `http://localhost:5000`    | Base URL used to build confirmation/invite links in emails          |
+| `PPS_AUTH_BASE_URL`           | `http://localhost:4000`    | `pps_auth` base URL for Google token exchange                       |
+| `SCHEDULER_PPS_CLIENT_ID`     | `scheduler`                | `pps_auth` client id for the exchange                               |
+| `SCHEDULER_PPS_CLIENT_SECRET` | —                          | `pps_auth` client secret (from `cargo run --bin seed`)              |
+| `HATAN_SERVICE_TOKEN`         | —                          | Shared secret for `/org/register-external` (same value in hatan)    |
 
 For production, use `postgresql://user:pass@host:5432/dbname` for `DATABASE_URL`.
 
+## Data Model
+
+| Model                | Purpose                                                                 |
+|-----------------------|--------------------------------------------------------------------------|
+| `User`                | A person with Google Calendar access — either legacy direct-OAuth (`token`/`refresh_token`, populated only via the invite/join flow) or broker-backed (`pps_user_id`, tokens fetched from `pps_auth`) |
+| `Organization`        | An org with its own Google Calendar (`google_calendar_id`)               |
+| `OrganizationMember`  | Links a `User` to an `Organization` with a `role` (`owner`/`manager`/`employee`) and booking `priority` |
+| `OrganizationInvite`  | A pending invite for a new member to join an org via direct OAuth        |
+| `Booking`             | A confirmed booking, mirrors a Google Calendar event                     |
+| `PendingBooking`      | An unconfirmed booking awaiting guest confirmation via emailed link       |
+
+> Note: the invite/join flow and the pending-booking/email-confirmation flow currently have
+> no caller in hatan (confirmed 2026-07-13) — see `docs/BACKLOG.md`. The invite/join flow is
+> unscheduled scaffolding; the pending-booking/email-confirmation flow is **planned to be
+> wired up by hatan next** — not a removal candidate.
+
 ## API Endpoints
 
-### `GET /`
-Redirects the user to the Google OAuth consent screen.
+### Auth (`app/main`)
 
-### `GET /callback`
-OAuth redirect target. Stores or updates the user's calendar credentials in the database.
+| Route | Method | Description |
+|---|---|---|
+| `/token/revoke` | POST (Bearer) | Clears the caller's `api_token` |
 
-### `GET /get-busy-hours`
+### Booking (`app/booking`)
 
-Returns calendar events for a given user and date.
+| Route | Method | Description |
+|---|---|---|
+| `/book` | POST (Bearer) | Creates a booking. Validates slot alignment (30-min), duration (≤3h), org existence, and guest email domain (MX). Picks an available org member. `confirmed: true` creates the Google Calendar event immediately; otherwise a `PendingBooking` is stored and a confirmation email is sent. |
+| `/confirm-booking/<token>` | GET | Confirms a pending booking — creates the Google Calendar event and a `Booking` record, deletes the `PendingBooking` |
 
-| Parameter | Required | Format       | Default |
-|-----------|----------|--------------|---------|
-| `email`   | yes      | string       | —       |
-| `date`    | no       | `YYYY-MM-DD` | today   |
-
-**Example:**
-```
-GET /get-busy-hours?email=user@example.com&date=2024-08-01
-```
-
-**Response:**
-```json
-[
-  {"start": "2024-08-01T09:00:00Z", "end": "2024-08-01T10:00:00Z"},
-  {"start": "2024-08-01T14:00:00Z", "end": "2024-08-01T15:30:00Z"}
-]
-```
-
-### `POST /book`
-
-Submits a booking request. Validates slot alignment, duration, store existence, and guest email domain before creating a pending booking. Sends a confirmation email to the guest.
+`POST /book` body:
 
 | Field | Required | Description |
 |---|---|---|
-| `store_email` | yes | Must match a connected store in the system |
+| `org_uid` | yes | Organization id |
 | `guest_email` | yes | Guest's email — domain is MX-validated |
 | `guest_name` | yes | Guest's display name |
 | `date` | yes | `YYYY-MM-DD` |
-| `start_time` | yes | `HH:MM`, aligned to 30-minute slots (00 or 30) |
-| `end_time` | yes | `HH:MM`, aligned to 30-minute slots (00 or 30) |
+| `start_time` / `end_time` | yes | `HH:MM`, aligned to 30-minute slots |
+| `tz` | no (default `UTC`) | IANA timezone for `start_time`/`end_time` |
+| `user_id` | no | Preferred member id to book, if available |
+| `confirmed` | no (default `false`) | Skip the email-confirmation step and book immediately |
 
-Rules: duration must be a multiple of 30 minutes and cannot exceed 3 hours.
+### Organizations (`app/org`, prefix `/org`)
 
-**Example:**
-```
-POST /book
-{
-  "store_email": "store@example.com",
-  "guest_email": "guest@example.com",
-  "guest_name": "John Doe",
-  "date": "2024-08-02",
-  "start_time": "11:00",
-  "end_time": "12:30"
-}
-```
-
-**Response:** `200 {"message": "Confirmation email sent to guest@example.com"}`
-
----
-
-### `GET /confirm-booking/<token>`
-
-Confirms a pending booking. Creates a Google Calendar event on the store's calendar with the guest added as an attendee — Google sends the guest a native calendar invite.
-
-- `404` if token is not found
-- `410 Gone` if the confirmation link has expired (24-hour TTL)
-- `200` with event details on success:
-
-```json
-{
-  "event_id": "google_calendar_event_id",
-  "title": "Appointment",
-  "start": "2024-08-02T11:00:00Z",
-  "end": "2024-08-02T12:30:00Z",
-  "html_link": "https://calendar.google.com/event?eid=..."
-}
-```
+| Route | Method | Description |
+|---|---|---|
+| `/org/me` | GET (Bearer) | Returns the caller's organization |
+| `/org/<org_uid>/availability` | GET (Bearer) | Merged free-slot availability across all org members for a given `date` and `tz` |
+| `/org/register-external` | POST (`X-Service-Token`) | Service-authenticated org/user registration for hatan — creates or looks up a broker-backed (`pps_user_id`) user and their org |
+| `/org/<org_uid>/invite` | POST (Bearer) | Manager/owner invites a new member by email |
+| `/org/<org_uid>/join/<token>` | GET | Invitee accepts an invite — starts direct Google OAuth |
+| `/org/join-callback` | GET | OAuth redirect target for the invite flow — creates the `OrganizationMember` |
+| `/org/<org_uid>/users/<user_id>` | PUT (Bearer) | Manager/owner updates a member's `role`/`priority` |
 
 ## Standalone CLI
 
-`main.py` authenticates via a local browser flow and prints free 30-minute slots for today:
-
-```bash
-python main.py
-```
-
-Credentials are cached in `token.pickle` (gitignored) for subsequent runs.
+None — the standalone `main.py` CLI script was removed; use `python run.py` and the API above.
 
 ## Docker
 
@@ -167,8 +144,6 @@ CI publishes `ghcr.io/shawila/scheduler` on push to master and deploys via
 python3 -m pytest tests/ -v
 ```
 
-Tests cover `app/slots.py` (pure slot computation logic) and require no Google API credentials.
-
 ## Project Structure
 
 ```
@@ -176,18 +151,27 @@ scheduler/
 ├── app/
 │   ├── __init__.py        # Flask app factory
 │   ├── config.py          # Configuration from environment
-│   ├── extensions.py      # SQLAlchemy instance
-│   ├── slots.py           # Pure free-slot computation (testable, no Google deps)
-│   └── main/
-│       ├── __init__.py
-│       └── routes.py      # OAuth flow and calendar endpoints
-├── app/models/
-│   └── customer.py        # Customer model (stores OAuth tokens)
-├── migrations/            # Alembic migrations
+│   ├── extensions.py      # SQLAlchemy / Flask-Mail instances
+│   ├── auth.py             # require_auth decorator (Bearer api_token)
+│   ├── google_calendar.py  # OAuth flow + credential resolution (direct or pps_auth broker)
+│   ├── pps_auth.py         # pps_auth HTTP client for broker-backed Google tokens
+│   ├── slots.py            # Pure free-slot computation (testable, no Google deps)
+│   ├── main/
+│   │   └── routes.py       # /token/revoke
+│   ├── booking/
+│   │   ├── routes.py       # /book, /confirm-booking
+│   │   ├── validation.py   # slot alignment, duration, MX record checks
+│   │   ├── events.py       # Google Calendar event creation
+│   │   └── email.py        # booking confirmation email
+│   └── org/
+│       ├── routes.py       # org CRUD, availability, invite/join, register-external
+│       ├── selection.py     # picks an available member for a booking
+│       └── email.py        # invite email
+├── app/models/              # User, Organization, OrganizationMember, OrganizationInvite,
+│                            # Booking, PendingBooking
+├── migrations/               # Alembic migrations
 ├── tests/
-│   └── test_scheduler.py  # Unit tests for slot logic
-├── main.py                # Standalone CLI script
-├── run.py                 # Flask app entry point
+├── run.py                    # Flask app entry point
 ├── requirements.txt
 └── .env.example
 ```
