@@ -1,6 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
-from app.slots import compute_available_slots
+from zoneinfo import ZoneInfo
+from app.slots import compute_available_slots, to_google_utc
 
 DATE = datetime(2024, 8, 1)
 
@@ -28,6 +29,20 @@ class TestComputeAvailableSlots:
         busy_all_day = [{'start': '2024-08-01T00:00:00Z', 'end': '2024-08-02T00:00:00Z'}]
         slots = compute_available_slots([busy_all_day, []], DATE)
         assert len(slots) == 48
+
+    def test_labels_slots_in_local_timezone(self):
+        slots = compute_available_slots([[]], DATE, tz='Asia/Tokyo')
+        assert len(slots) == 48
+        assert slots[0] == {'start': '00:00', 'end': '00:30'}
+        assert slots[-1] == {'start': '23:30', 'end': '00:00'}
+
+    def test_busy_period_crossing_utc_midnight_blocks_correct_local_slot(self):
+        # 2024-08-01 00:00 JST == 2024-07-31 15:00 UTC (JST = UTC+9)
+        busy = [{'start': '2024-07-31T15:00:00Z', 'end': '2024-07-31T15:30:00Z'}]
+        slots = compute_available_slots([busy], DATE, tz='Asia/Tokyo')
+        starts = [s['start'] for s in slots]
+        assert '00:00' not in starts
+        assert '00:30' in starts
 
 
 def busy_service(busy):
@@ -73,3 +88,16 @@ class TestAvailabilityEndpoint:
                               query_string={'date': '2024-08-01'},
                               headers={'Authorization': 'Bearer outsider-token'})
         assert response.status_code == 403
+
+
+class TestToGoogleUtc:
+    def test_naive_datetime_is_treated_as_already_utc(self):
+        assert to_google_utc(datetime(2024, 8, 1, 11, 0)) == '2024-08-01T11:00:00Z'
+
+    def test_aware_datetime_is_converted_to_utc(self):
+        aware = datetime(2024, 8, 1, 11, 0, tzinfo=ZoneInfo('Asia/Tokyo'))
+        assert to_google_utc(aware) == '2024-08-01T02:00:00Z'
+
+    def test_utc_aware_datetime_passes_through(self):
+        aware = datetime(2024, 8, 1, 11, 0, tzinfo=timezone.utc)
+        assert to_google_utc(aware) == '2024-08-01T11:00:00Z'
