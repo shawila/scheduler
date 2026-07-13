@@ -263,3 +263,70 @@ class TestPostBookConfirmed:
         assert response.status_code == 409
         with app.app_context():
             assert Booking.query.count() == 0
+
+
+class TestPostBookConfirmedTimezone:
+    def _payload(self, org_id, tz='Asia/Tokyo'):
+        return {**VALID_PAYLOAD, 'org_uid': org_id, 'tz': tz, 'confirmed': True}
+
+    def test_passes_local_aware_datetimes_and_stores_utc(self, client, app, authed_user, org_with_owner):
+        with patch('app.booking.routes.check_mx_record', return_value=True), \
+             patch('app.booking.routes.select_admin', return_value=authed_user), \
+             patch('app.booking.routes.create_calendar_event', return_value=CONFIRMED_EVENT) as mock_event, \
+             patch('app.booking.routes.send_confirmation_email'):
+            response = client.post('/book', json=self._payload(org_with_owner), headers=auth())
+        assert response.status_code == 201
+
+        start_dt = mock_event.call_args[0][4]
+        assert start_dt.tzinfo.key == 'Asia/Tokyo'
+        assert start_dt.hour == 11  # VALID_PAYLOAD start_time, local wall time
+
+        with app.app_context():
+            booking = Booking.query.filter_by(google_event_id='google_event_direct').first()
+            # 11:00 JST == 02:00 UTC same day
+            assert booking.start_datetime == datetime(2024, 8, 1, 2, 0)
+
+    def test_unknown_timezone_returns_400(self, client, authed_user, org_with_owner):
+        response = client.post('/book', json=self._payload(org_with_owner, tz='Not/AZone'), headers=auth())
+        assert response.status_code == 400
+        assert 'Unknown timezone' in response.json['error']
+
+
+class TestPostBookPendingTimezone:
+    def test_stores_requested_timezone_and_utc_instant(self, client, app, authed_user, org_with_owner):
+        payload = {**VALID_PAYLOAD, 'org_uid': org_with_owner, 'tz': 'Asia/Tokyo'}
+        with patch('app.booking.routes.check_mx_record', return_value=True), \
+             patch('app.booking.routes.select_admin', return_value=authed_user), \
+             patch('app.booking.routes.send_confirmation_email'):
+            response = client.post('/book', json=payload, headers=auth())
+        assert response.status_code == 201
+        with app.app_context():
+            pending = PendingBooking.query.filter_by(guest_email='guest@example.com').first()
+            assert pending.time_zone == 'Asia/Tokyo'
+            assert pending.start_datetime == datetime(2024, 8, 1, 2, 0)
+
+
+class TestConfirmBookingTimezone:
+    def test_confirms_using_the_pending_timezone(self, client, app, authed_user, org_with_owner):
+        with app.app_context():
+            pending = PendingBooking(
+                confirmation_token='tz-token',
+                org_id=org_with_owner,
+                admin_user_id=authed_user.id,
+                guest_email='guest@example.com',
+                guest_name='John Doe',
+                start_datetime=datetime(2024, 8, 1, 2, 0),   # UTC; == 11:00 JST
+                end_datetime=datetime(2024, 8, 1, 3, 30),    # UTC; == 12:30 JST
+                time_zone='Asia/Tokyo',
+                expires_at=datetime.utcnow() + timedelta(hours=24),
+            )
+            db.session.add(pending)
+            db.session.commit()
+
+        with patch('app.booking.routes.create_calendar_event', return_value=CONFIRMED_EVENT) as mock_event:
+            response = client.get('/confirm-booking/tz-token')
+        assert response.status_code == 200
+
+        start_dt = mock_event.call_args[0][4]
+        assert start_dt.tzinfo.key == 'Asia/Tokyo'
+        assert start_dt.hour == 11

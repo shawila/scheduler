@@ -1,5 +1,6 @@
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from flask import Blueprint, request, jsonify, g
 from app.extensions import db
 from app.models.organization import Organization
@@ -26,6 +27,12 @@ def book():
     if missing:
         return jsonify({'error': f'Missing fields: {", ".join(missing)}'}), 400
 
+    tz = data.get('tz', 'UTC')
+    try:
+        zone = ZoneInfo(tz)
+    except ZoneInfoNotFoundError:
+        return jsonify({'error': f'Unknown timezone: {tz}'}), 400
+
     try:
         date = datetime.strptime(data['date'], '%Y-%m-%d')
         start_time = datetime.strptime(data['start_time'], '%H:%M')
@@ -33,8 +40,8 @@ def book():
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
 
-    start_dt = datetime(date.year, date.month, date.day, start_time.hour, start_time.minute)
-    end_dt = datetime(date.year, date.month, date.day, end_time.hour, end_time.minute)
+    start_dt = datetime(date.year, date.month, date.day, start_time.hour, start_time.minute, tzinfo=zone)
+    end_dt = datetime(date.year, date.month, date.day, end_time.hour, end_time.minute, tzinfo=zone)
 
     if not is_slot_aligned(start_dt) or not is_slot_aligned(end_dt):
         return jsonify({'error': 'Times must be aligned to 30-minute slots (minutes must be 00 or 30)'}), 400
@@ -57,6 +64,9 @@ def book():
     if not chosen_admin:
         return jsonify({'error': 'No admin available for the requested time slot'}), 409
 
+    start_utc = start_dt.astimezone(timezone.utc).replace(tzinfo=None)
+    end_utc = end_dt.astimezone(timezone.utc).replace(tzinfo=None)
+
     if data.get('confirmed') is True:
         created_event = create_calendar_event(
             chosen_admin, org, data['guest_email'], data['guest_name'], start_dt, end_dt,
@@ -70,8 +80,8 @@ def book():
             admin_user_id=chosen_admin.id,
             guest_email=data['guest_email'],
             guest_name=data['guest_name'],
-            start_datetime=start_dt,
-            end_datetime=end_dt,
+            start_datetime=start_utc,
+            end_datetime=end_utc,
         )
         db.session.add(booking)
         db.session.commit()
@@ -91,8 +101,9 @@ def book():
         admin_user_id=chosen_admin.id,
         guest_email=data['guest_email'],
         guest_name=data['guest_name'],
-        start_datetime=start_dt,
-        end_datetime=end_dt,
+        start_datetime=start_utc,
+        end_datetime=end_utc,
+        time_zone=tz,
         expires_at=datetime.utcnow() + timedelta(hours=24),
     )
     db.session.add(pending)
@@ -118,9 +129,13 @@ def confirm_booking(token):
 
     org = Organization.query.get(pending.org_id)
 
+    zone = ZoneInfo(pending.time_zone)
+    local_start = pending.start_datetime.replace(tzinfo=timezone.utc).astimezone(zone)
+    local_end = pending.end_datetime.replace(tzinfo=timezone.utc).astimezone(zone)
+
     created_event = create_calendar_event(
         admin, org, pending.guest_email, pending.guest_name,
-        pending.start_datetime, pending.end_datetime,
+        local_start, local_end,
     )
     if not created_event:
         return jsonify({'error': 'Time slot is no longer available'}), 409
