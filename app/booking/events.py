@@ -1,5 +1,6 @@
 from googleapiclient.discovery import build
 from app.google_calendar import google_credentials_for
+from app.slots import to_google_utc
 
 
 def create_calendar_event(admin, org, guest_email, guest_name, start_dt, end_dt):
@@ -10,18 +11,19 @@ def create_calendar_event(admin, org, guest_email, guest_name, start_dt, end_dt)
     service = build('calendar', 'v3', credentials=credentials)
 
     freebusy = service.freebusy().query(body={
-        'timeMin': start_dt.strftime('%Y-%m-%dT%H:%M:%SZ'),
-        'timeMax': end_dt.strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'timeMin': to_google_utc(start_dt),
+        'timeMax': to_google_utc(end_dt),
         'timeZone': 'UTC',
         'items': [{'id': 'primary'}],
     }).execute()
     if freebusy['calendars']['primary'].get('busy'):
         return None
 
+    tz_name = start_dt.tzinfo.key if start_dt.tzinfo is not None else 'UTC'
     event_body = {
         'summary': f'Appointment — {guest_name}',
-        'start': {'dateTime': start_dt.strftime('%Y-%m-%dT%H:%M:%SZ'), 'timeZone': 'UTC'},
-        'end': {'dateTime': end_dt.strftime('%Y-%m-%dT%H:%M:%SZ'), 'timeZone': 'UTC'},
+        'start': {'dateTime': start_dt.strftime('%Y-%m-%dT%H:%M:%S'), 'timeZone': tz_name},
+        'end': {'dateTime': end_dt.strftime('%Y-%m-%dT%H:%M:%S'), 'timeZone': tz_name},
         'attendees': [{'email': guest_email, 'displayName': guest_name}],
     }
     created_event = service.events().insert(
