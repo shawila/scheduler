@@ -104,6 +104,7 @@ def book():
         start_datetime=start_utc,
         end_datetime=end_utc,
         time_zone=tz,
+        callback_url=data.get('callback_url'),
         expires_at=datetime.utcnow() + timedelta(hours=24),
     )
     db.session.add(pending)

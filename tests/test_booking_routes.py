@@ -108,6 +108,27 @@ class TestPostBook:
             assert pending.admin_user_id == authed_user.id
             assert pending.org_id == org_with_owner
 
+    def test_stores_callback_url_when_provided(self, client, app, authed_user, org_with_owner):
+        payload = {**VALID_PAYLOAD, 'org_uid': org_with_owner, 'callback_url': 'https://hatan.test/api/scheduler/bookings/callback?ref=abc'}
+        with patch('app.booking.routes.check_mx_record', return_value=True), \
+             patch('app.booking.routes.select_admin', return_value=authed_user), \
+             patch('app.booking.routes.send_confirmation_email'):
+            response = client.post('/book', json=payload, headers=auth())
+        assert response.status_code == 201
+        with app.app_context():
+            pending = PendingBooking.query.filter_by(guest_email='guest@example.com').first()
+            assert pending.callback_url == 'https://hatan.test/api/scheduler/bookings/callback?ref=abc'
+
+    def test_callback_url_defaults_to_none(self, client, app, authed_user, org_with_owner):
+        payload = {**VALID_PAYLOAD, 'org_uid': org_with_owner}
+        with patch('app.booking.routes.check_mx_record', return_value=True), \
+             patch('app.booking.routes.select_admin', return_value=authed_user), \
+             patch('app.booking.routes.send_confirmation_email'):
+            client.post('/book', json=payload, headers=auth())
+        with app.app_context():
+            pending = PendingBooking.query.filter_by(guest_email='guest@example.com').first()
+            assert pending.callback_url is None
+
 
 def make_pending(app, org_id, admin_user_id, token='valid-token-abc', expires_hours=24):
     with app.app_context():
