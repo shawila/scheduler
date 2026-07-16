@@ -10,6 +10,7 @@ class PendingBooking(db.Model):
     guest_email = db.Column(db.String(120), nullable=False)
     guest_name = db.Column(db.String(200), nullable=False)
     time_zone = db.Column(db.String(50), nullable=False, default='UTC')
+    callback_url = db.Column(db.String(500), nullable=True)
     start_datetime = db.Column(db.DateTime, nullable=False)
     end_datetime = db.Column(db.DateTime, nullable=False)
     expires_at = db.Column(db.DateTime, nullable=False)

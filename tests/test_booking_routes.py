@@ -108,6 +108,64 @@ class TestPostBook:
             assert pending.admin_user_id == authed_user.id
             assert pending.org_id == org_with_owner
 
+    def test_stores_callback_url_when_provided(self, client, app, authed_user, org_with_owner):
+        payload = {**VALID_PAYLOAD, 'org_uid': org_with_owner, 'callback_url': 'https://hatan.test/api/scheduler/bookings/callback?ref=abc'}
+        with patch('app.booking.routes.check_mx_record', return_value=True), \
+             patch('app.booking.routes.select_admin', return_value=authed_user), \
+             patch('app.booking.routes.send_confirmation_email'):
+            response = client.post('/book', json=payload, headers=auth())
+        assert response.status_code == 201
+        with app.app_context():
+            pending = PendingBooking.query.filter_by(guest_email='guest@example.com').first()
+            assert pending.callback_url == 'https://hatan.test/api/scheduler/bookings/callback?ref=abc'
+
+    def test_callback_url_defaults_to_none(self, client, app, authed_user, org_with_owner):
+        payload = {**VALID_PAYLOAD, 'org_uid': org_with_owner}
+        with patch('app.booking.routes.check_mx_record', return_value=True), \
+             patch('app.booking.routes.select_admin', return_value=authed_user), \
+             patch('app.booking.routes.send_confirmation_email'):
+            client.post('/book', json=payload, headers=auth())
+        with app.app_context():
+            pending = PendingBooking.query.filter_by(guest_email='guest@example.com').first()
+            assert pending.callback_url is None
+
+    def test_rejects_non_http_callback_url_scheme(self, client, app, authed_user, org_with_owner):
+        payload = {**VALID_PAYLOAD, 'org_uid': org_with_owner, 'callback_url': 'javascript:alert(1)'}
+        with patch('app.booking.routes.check_mx_record', return_value=True), \
+             patch('app.booking.routes.select_admin', return_value=authed_user), \
+             patch('app.booking.routes.send_confirmation_email'):
+            response = client.post('/book', json=payload, headers=auth())
+        assert response.status_code == 400
+        assert response.json['error'] == 'Invalid callback_url'
+        with app.app_context():
+            assert PendingBooking.query.filter_by(guest_email='guest@example.com').first() is None
+
+    def test_rejects_callback_url_outside_allowed_prefix(self, client, app, authed_user, org_with_owner, monkeypatch):
+        monkeypatch.setenv('ALLOWED_CALLBACK_PREFIX', 'https://hatan.example.com/')
+        payload = {**VALID_PAYLOAD, 'org_uid': org_with_owner,
+                   'callback_url': 'https://other-host.test/api/scheduler/bookings/callback?ref=abc'}
+        with patch('app.booking.routes.check_mx_record', return_value=True), \
+             patch('app.booking.routes.select_admin', return_value=authed_user), \
+             patch('app.booking.routes.send_confirmation_email'):
+            response = client.post('/book', json=payload, headers=auth())
+        assert response.status_code == 400
+        assert response.json['error'] == 'Invalid callback_url'
+        with app.app_context():
+            assert PendingBooking.query.filter_by(guest_email='guest@example.com').first() is None
+
+    def test_accepts_callback_url_matching_allowed_prefix(self, client, app, authed_user, org_with_owner, monkeypatch):
+        monkeypatch.setenv('ALLOWED_CALLBACK_PREFIX', 'https://hatan.example.com/')
+        payload = {**VALID_PAYLOAD, 'org_uid': org_with_owner,
+                   'callback_url': 'https://hatan.example.com/api/scheduler/bookings/callback?ref=abc'}
+        with patch('app.booking.routes.check_mx_record', return_value=True), \
+             patch('app.booking.routes.select_admin', return_value=authed_user), \
+             patch('app.booking.routes.send_confirmation_email'):
+            response = client.post('/book', json=payload, headers=auth())
+        assert response.status_code == 201
+        with app.app_context():
+            pending = PendingBooking.query.filter_by(guest_email='guest@example.com').first()
+            assert pending.callback_url == 'https://hatan.example.com/api/scheduler/bookings/callback?ref=abc'
+
 
 def make_pending(app, org_id, admin_user_id, token='valid-token-abc', expires_hours=24):
     with app.app_context():
@@ -227,6 +285,60 @@ class TestConfirmBooking:
             client.get('/confirm-booking/valid-token-abc')
         body = service.events().insert.call_args_list[0][1]['body']
         assert body['summary'] == 'Appointment — John Doe'
+
+    def test_posts_to_callback_url_on_success(self, client, app, authed_user, org_with_owner):
+        with app.app_context():
+            pending = PendingBooking(
+                confirmation_token='cb-token',
+                org_id=org_with_owner,
+                admin_user_id=authed_user.id,
+                guest_email='guest@example.com',
+                guest_name='John Doe',
+                start_datetime=datetime(2024, 8, 1, 11, 0, 0),
+                end_datetime=datetime(2024, 8, 1, 12, 30, 0),
+                callback_url='https://hatan.test/api/scheduler/bookings/callback?ref=abc',
+                expires_at=datetime.utcnow() + timedelta(hours=24),
+            )
+            db.session.add(pending)
+            db.session.commit()
+        service = mock_calendar_service()
+        with patch('app.booking.events.build', return_value=service), \
+             patch('app.booking.callback.requests.post') as mock_post:
+            response = client.get('/confirm-booking/cb-token')
+        assert response.status_code == 200
+        mock_post.assert_called_once()
+        called_url, called_kwargs = mock_post.call_args[0][0], mock_post.call_args[1]
+        assert called_url == 'https://hatan.test/api/scheduler/bookings/callback?ref=abc'
+        assert called_kwargs['json']['event_id'] == 'google_event_123'
+        assert 'X-Service-Token' in called_kwargs['headers']
+
+    def test_no_callback_post_when_url_absent(self, client, app, authed_user, org_with_owner):
+        make_pending(app, org_with_owner, authed_user.id)  # no callback_url
+        with patch('app.booking.events.build', return_value=mock_calendar_service()), \
+             patch('app.booking.callback.requests.post') as mock_post:
+            client.get('/confirm-booking/valid-token-abc')
+        mock_post.assert_not_called()
+
+    def test_confirmation_succeeds_when_callback_post_fails(self, client, app, authed_user, org_with_owner):
+        with app.app_context():
+            pending = PendingBooking(
+                confirmation_token='cb-fail-token',
+                org_id=org_with_owner,
+                admin_user_id=authed_user.id,
+                guest_email='guest@example.com',
+                guest_name='John Doe',
+                start_datetime=datetime(2024, 8, 1, 11, 0, 0),
+                end_datetime=datetime(2024, 8, 1, 12, 30, 0),
+                callback_url='https://unreachable.test/cb',
+                expires_at=datetime.utcnow() + timedelta(hours=24),
+            )
+            db.session.add(pending)
+            db.session.commit()
+        with patch('app.booking.events.build', return_value=mock_calendar_service()), \
+             patch('app.booking.callback.requests.post', side_effect=Exception('boom')):
+            response = client.get('/confirm-booking/cb-fail-token')
+        assert response.status_code == 200
+        assert response.json['event_id'] == 'google_event_123'
 
 
 CONFIRMED_EVENT = {

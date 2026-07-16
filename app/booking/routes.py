@@ -8,9 +8,10 @@ from app.models.organization_member import OrganizationMember
 from app.models.user import User
 from app.models.pending_booking import PendingBooking
 from app.models.booking import Booking
-from app.booking.validation import is_slot_aligned, validate_booking_duration, check_mx_record
+from app.booking.validation import is_slot_aligned, validate_booking_duration, check_mx_record, is_allowed_callback_url
 from app.booking.email import send_confirmation_email
 from app.booking.events import create_calendar_event
+from app.booking.callback import notify_callback
 from app.org.selection import select_admin
 from app.auth import require_auth
 
@@ -94,6 +95,10 @@ def book():
             'html_link': created_event.get('htmlLink'),
         }), 201
 
+    callback_url = data.get('callback_url')
+    if callback_url and not is_allowed_callback_url(callback_url):
+        return jsonify({'error': 'Invalid callback_url'}), 400
+
     token = secrets.token_urlsafe(32)
     pending = PendingBooking(
         confirmation_token=token,
@@ -104,6 +109,7 @@ def book():
         start_datetime=start_utc,
         end_datetime=end_utc,
         time_zone=tz,
+        callback_url=callback_url,
         expires_at=datetime.utcnow() + timedelta(hours=24),
     )
     db.session.add(pending)
@@ -149,14 +155,18 @@ def confirm_booking(token):
         start_datetime=pending.start_datetime,
         end_datetime=pending.end_datetime,
     )
+    callback_url = pending.callback_url
     db.session.add(booking)
     db.session.delete(pending)
     db.session.commit()
 
-    return jsonify({
+    result = {
         'event_id': created_event['id'],
         'title': created_event['summary'],
         'start': created_event['start']['dateTime'],
         'end': created_event['end']['dateTime'],
         'html_link': created_event.get('htmlLink'),
-    }), 200
+    }
+    notify_callback(callback_url, result)
+
+    return jsonify(result), 200
