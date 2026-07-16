@@ -126,6 +126,29 @@ class TestAvailabilityEndpoint:
         assert response.status_code == 400
         assert 'Unknown timezone' in response.json['error']
 
+    def test_passes_window_params_to_slot_generation(self, client, authed_user, org_with_owner):
+        with patch('app.org.routes.build', return_value=busy_service([])):
+            response = client.get(f'/org/{org_with_owner}/availability',
+                                  query_string={'date': '2030-06-03',
+                                                'window_start': '10:00', 'window_end': '12:00'},
+                                  headers=self.auth())
+        assert response.status_code == 200
+        assert [s['start'] for s in response.json['slots']] == ['10:00', '10:30', '11:00', '11:30']
+
+    def test_malformed_window_returns_400(self, client, authed_user, org_with_owner):
+        response = client.get(f'/org/{org_with_owner}/availability',
+                              query_string={'date': '2030-06-03', 'window_start': 'abc'},
+                              headers=self.auth())
+        assert response.status_code == 400
+        assert 'Invalid booking window' in response.json['error']
+
+    def test_inverted_window_returns_400(self, client, authed_user, org_with_owner):
+        response = client.get(f'/org/{org_with_owner}/availability',
+                              query_string={'date': '2030-06-03',
+                                            'window_start': '17:00', 'window_end': '09:00'},
+                              headers=self.auth())
+        assert response.status_code == 400
+
     def test_queries_google_with_local_midnight_window_in_utc(self, client, authed_user, org_with_owner):
         service = busy_service([])
         with patch('app.org.routes.build', return_value=service):

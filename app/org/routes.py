@@ -13,11 +13,21 @@ from app.models.user import User
 from app.google_calendar import google_credentials_for, build_oauth_flow, INVITE_REDIRECT_URI
 from app.auth import require_auth
 from app.org.email import send_invite_email
-from app.slots import compute_available_slots, to_google_utc
+from app.slots import (compute_available_slots, to_google_utc,
+                       DEFAULT_WINDOW_START, DEFAULT_WINDOW_END)
 
 org_bp = Blueprint('org', __name__, url_prefix='/org')
 
 ROLE_RANK = {'employee': 1, 'manager': 2, 'owner': 3}
+
+
+def _valid_window(window_start, window_end):
+    try:
+        datetime.strptime(window_start, '%H:%M')
+        datetime.strptime(window_end, '%H:%M')
+    except ValueError:
+        return False
+    return window_start < window_end
 
 
 @org_bp.route('/me', methods=['GET'])
@@ -48,6 +58,11 @@ def availability(org_uid):
     except ValueError:
         return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
 
+    window_start = request.args.get('window_start') or DEFAULT_WINDOW_START
+    window_end = request.args.get('window_end') or DEFAULT_WINDOW_END
+    if not _valid_window(window_start, window_end):
+        return jsonify({'error': 'Invalid booking window'}), 400
+
     actor = OrganizationMember.query.filter_by(
         user_id=g.current_user.id, org_id=org_uid
     ).first()
@@ -72,7 +87,8 @@ def availability(org_uid):
         }).execute()
         members_busy.append(freebusy['calendars']['primary'].get('busy', []))
 
-    return jsonify({'slots': compute_available_slots(members_busy, date, tz)})
+    return jsonify({'slots': compute_available_slots(
+        members_busy, date, tz, window_start=window_start, window_end=window_end)})
 
 
 def _create_org_with_calendar(user, org_name, owner_email):
