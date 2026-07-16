@@ -2,7 +2,7 @@ import os
 from datetime import datetime, timezone
 import dns.resolver
 from app.slots import (SLOT_DURATION_MINUTES, MAX_BOOKING_DURATION_MINUTES,
-                       DEFAULT_WINDOW_START, DEFAULT_WINDOW_END)
+                       DEFAULT_WINDOW_START, DEFAULT_WINDOW_END, is_valid_window)
 
 
 def is_slot_aligned(dt: datetime) -> bool:
@@ -43,13 +43,10 @@ def is_allowed_callback_url(url: str) -> bool:
 def validate_within_window(start_dt: datetime, end_dt: datetime,
                            window_start: str, window_end: str,
                            now: datetime = None) -> tuple:
-    try:
-        ws = datetime.strptime(window_start, '%H:%M')
-        we = datetime.strptime(window_end, '%H:%M')
-    except ValueError:
+    if not is_valid_window(window_start, window_end):
         return False, 'Invalid booking window'
-    if window_start >= window_end:
-        return False, 'Invalid booking window'
+    ws = datetime.strptime(window_start, '%H:%M')
+    we = datetime.strptime(window_end, '%H:%M')
 
     day_open = start_dt.replace(hour=ws.hour, minute=ws.minute, second=0, microsecond=0)
     day_close = start_dt.replace(hour=we.hour, minute=we.minute, second=0, microsecond=0)

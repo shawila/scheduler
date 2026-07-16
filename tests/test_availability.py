@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch, MagicMock
 from zoneinfo import ZoneInfo
-from app.slots import compute_available_slots, to_google_utc
+from app.slots import compute_available_slots, to_google_utc, is_valid_window
 
 DATE = datetime(2024, 8, 1)
 EARLY = datetime(2020, 1, 1, tzinfo=timezone.utc)
@@ -159,6 +159,25 @@ class TestAvailabilityEndpoint:
         # freebusy still queries the full local day; the booking window only clamps slot generation
         assert call_kwargs['body']['timeMin'] == '2030-06-02T15:00:00Z'
         assert call_kwargs['body']['timeMax'] == '2030-06-03T15:00:00Z'
+
+
+class TestIsValidWindow:
+    def test_zero_padded_window_is_valid(self):
+        assert is_valid_window('09:00', '17:00') is True
+
+    def test_non_zero_padded_start_compares_numerically(self):
+        # lexicographic comparison would wrongly reject this ('8' > '1')
+        assert is_valid_window('8:00', '17:00') is True
+
+    def test_inverted_non_zero_padded_window_is_invalid(self):
+        # lexicographic comparison would wrongly accept this ('1' < '9')
+        assert is_valid_window('17:00', '9:00') is False
+
+    def test_equal_bounds_are_invalid(self):
+        assert is_valid_window('09:00', '09:00') is False
+
+    def test_malformed_value_is_invalid(self):
+        assert is_valid_window('abc', '17:00') is False
 
 
 class TestToGoogleUtc:

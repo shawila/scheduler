@@ -14,20 +14,11 @@ from app.google_calendar import google_credentials_for, build_oauth_flow, INVITE
 from app.auth import require_auth
 from app.org.email import send_invite_email
 from app.slots import (compute_available_slots, to_google_utc,
-                       DEFAULT_WINDOW_START, DEFAULT_WINDOW_END)
+                       DEFAULT_WINDOW_START, DEFAULT_WINDOW_END, is_valid_window)
 
 org_bp = Blueprint('org', __name__, url_prefix='/org')
 
 ROLE_RANK = {'employee': 1, 'manager': 2, 'owner': 3}
-
-
-def _valid_window(window_start, window_end):
-    try:
-        datetime.strptime(window_start, '%H:%M')
-        datetime.strptime(window_end, '%H:%M')
-    except ValueError:
-        return False
-    return window_start < window_end
 
 
 @org_bp.route('/me', methods=['GET'])
@@ -60,7 +51,7 @@ def availability(org_uid):
 
     window_start = request.args.get('window_start') or DEFAULT_WINDOW_START
     window_end = request.args.get('window_end') or DEFAULT_WINDOW_END
-    if not _valid_window(window_start, window_end):
+    if not is_valid_window(window_start, window_end):
         return jsonify({'error': 'Invalid booking window'}), 400
 
     actor = OrganizationMember.query.filter_by(

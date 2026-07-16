@@ -12,6 +12,17 @@ def _parse_hhmm(value: str) -> tuple:
     return parsed.hour, parsed.minute
 
 
+def is_valid_window(window_start: str, window_end: str) -> bool:
+    """True when both bounds parse as HH:MM and start is before end,
+    compared numerically (string comparison breaks on non-zero-padded input)."""
+    try:
+        ws = _parse_hhmm(window_start)
+        we = _parse_hhmm(window_end)
+    except (ValueError, TypeError):
+        return False
+    return ws < we
+
+
 def compute_available_slots(members_busy: list, date: datetime, tz: str = 'UTC',
                             window_start: str = DEFAULT_WINDOW_START,
                             window_end: str = DEFAULT_WINDOW_END,
