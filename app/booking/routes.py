@@ -8,7 +8,9 @@ from app.models.organization_member import OrganizationMember
 from app.models.user import User
 from app.models.pending_booking import PendingBooking
 from app.models.booking import Booking
-from app.booking.validation import is_slot_aligned, validate_booking_duration, check_mx_record, is_allowed_callback_url
+from app.booking.validation import (is_slot_aligned, validate_booking_duration, check_mx_record,
+                                    is_allowed_callback_url, validate_within_window)
+from app.slots import DEFAULT_WINDOW_START, DEFAULT_WINDOW_END
 from app.booking.email import send_confirmation_email
 from app.booking.events import create_calendar_event
 from app.booking.callback import notify_callback
@@ -48,6 +50,14 @@ def book():
         return jsonify({'error': 'Times must be aligned to 30-minute slots (minutes must be 00 or 30)'}), 400
 
     valid, error = validate_booking_duration(start_dt, end_dt)
+    if not valid:
+        return jsonify({'error': error}), 400
+
+    valid, error = validate_within_window(
+        start_dt, end_dt,
+        data.get('window_start') or DEFAULT_WINDOW_START,
+        data.get('window_end') or DEFAULT_WINDOW_END,
+    )
     if not valid:
         return jsonify({'error': error}), 400
 

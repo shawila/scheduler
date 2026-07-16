@@ -1,9 +1,48 @@
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from unittest.mock import patch, call, MagicMock
-from app.booking.validation import is_slot_aligned, validate_booking_duration, check_mx_record
+from app.booking.validation import (is_slot_aligned, validate_booking_duration,
+                                    check_mx_record, validate_within_window)
 from app.booking.email import send_confirmation_email
 
 START = datetime(2024, 8, 1, 11, 0, 0)
+
+WINDOW_NOW = datetime(2020, 1, 1, tzinfo=timezone.utc)
+
+
+class TestValidateWithinWindow:
+    def _dt(self, hour, minute):
+        return datetime(2030, 8, 1, hour, minute, tzinfo=ZoneInfo('Asia/Tokyo'))
+
+    def test_inside_window_passes(self):
+        valid, error = validate_within_window(self._dt(11, 0), self._dt(11, 30), '09:00', '17:00', now=WINDOW_NOW)
+        assert valid is True
+        assert error == ''
+
+    def test_start_before_window_fails(self):
+        valid, error = validate_within_window(self._dt(8, 30), self._dt(9, 0), '09:00', '17:00', now=WINDOW_NOW)
+        assert valid is False
+        assert error == 'Requested time is outside booking hours'
+
+    def test_end_after_window_fails(self):
+        valid, error = validate_within_window(self._dt(16, 30), self._dt(17, 30), '09:00', '17:00', now=WINDOW_NOW)
+        assert valid is False
+        assert error == 'Requested time is outside booking hours'
+
+    def test_end_at_window_close_passes(self):
+        valid, _ = validate_within_window(self._dt(16, 30), self._dt(17, 0), '09:00', '17:00', now=WINDOW_NOW)
+        assert valid is True
+
+    def test_past_start_fails(self):
+        late_now = datetime(2031, 1, 1, tzinfo=timezone.utc)
+        valid, error = validate_within_window(self._dt(11, 0), self._dt(11, 30), '09:00', '17:00', now=late_now)
+        assert valid is False
+        assert error == 'Requested time is in the past'
+
+    def test_invalid_window_fails(self):
+        valid, error = validate_within_window(self._dt(11, 0), self._dt(11, 30), '17:00', '09:00', now=WINDOW_NOW)
+        assert valid is False
+        assert error == 'Invalid booking window'
 
 
 class TestIsSlotAligned:
