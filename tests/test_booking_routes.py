@@ -129,6 +129,43 @@ class TestPostBook:
             pending = PendingBooking.query.filter_by(guest_email='guest@example.com').first()
             assert pending.callback_url is None
 
+    def test_rejects_non_http_callback_url_scheme(self, client, app, authed_user, org_with_owner):
+        payload = {**VALID_PAYLOAD, 'org_uid': org_with_owner, 'callback_url': 'javascript:alert(1)'}
+        with patch('app.booking.routes.check_mx_record', return_value=True), \
+             patch('app.booking.routes.select_admin', return_value=authed_user), \
+             patch('app.booking.routes.send_confirmation_email'):
+            response = client.post('/book', json=payload, headers=auth())
+        assert response.status_code == 400
+        assert response.json['error'] == 'Invalid callback_url'
+        with app.app_context():
+            assert PendingBooking.query.filter_by(guest_email='guest@example.com').first() is None
+
+    def test_rejects_callback_url_outside_allowed_prefix(self, client, app, authed_user, org_with_owner, monkeypatch):
+        monkeypatch.setenv('ALLOWED_CALLBACK_PREFIX', 'https://hatan.example.com/')
+        payload = {**VALID_PAYLOAD, 'org_uid': org_with_owner,
+                   'callback_url': 'https://other-host.test/api/scheduler/bookings/callback?ref=abc'}
+        with patch('app.booking.routes.check_mx_record', return_value=True), \
+             patch('app.booking.routes.select_admin', return_value=authed_user), \
+             patch('app.booking.routes.send_confirmation_email'):
+            response = client.post('/book', json=payload, headers=auth())
+        assert response.status_code == 400
+        assert response.json['error'] == 'Invalid callback_url'
+        with app.app_context():
+            assert PendingBooking.query.filter_by(guest_email='guest@example.com').first() is None
+
+    def test_accepts_callback_url_matching_allowed_prefix(self, client, app, authed_user, org_with_owner, monkeypatch):
+        monkeypatch.setenv('ALLOWED_CALLBACK_PREFIX', 'https://hatan.example.com/')
+        payload = {**VALID_PAYLOAD, 'org_uid': org_with_owner,
+                   'callback_url': 'https://hatan.example.com/api/scheduler/bookings/callback?ref=abc'}
+        with patch('app.booking.routes.check_mx_record', return_value=True), \
+             patch('app.booking.routes.select_admin', return_value=authed_user), \
+             patch('app.booking.routes.send_confirmation_email'):
+            response = client.post('/book', json=payload, headers=auth())
+        assert response.status_code == 201
+        with app.app_context():
+            pending = PendingBooking.query.filter_by(guest_email='guest@example.com').first()
+            assert pending.callback_url == 'https://hatan.example.com/api/scheduler/bookings/callback?ref=abc'
+
 
 def make_pending(app, org_id, admin_user_id, token='valid-token-abc', expires_hours=24):
     with app.app_context():

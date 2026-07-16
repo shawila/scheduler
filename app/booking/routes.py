@@ -8,7 +8,7 @@ from app.models.organization_member import OrganizationMember
 from app.models.user import User
 from app.models.pending_booking import PendingBooking
 from app.models.booking import Booking
-from app.booking.validation import is_slot_aligned, validate_booking_duration, check_mx_record
+from app.booking.validation import is_slot_aligned, validate_booking_duration, check_mx_record, is_allowed_callback_url
 from app.booking.email import send_confirmation_email
 from app.booking.events import create_calendar_event
 from app.booking.callback import notify_callback
@@ -95,6 +95,10 @@ def book():
             'html_link': created_event.get('htmlLink'),
         }), 201
 
+    callback_url = data.get('callback_url')
+    if callback_url and not is_allowed_callback_url(callback_url):
+        return jsonify({'error': 'Invalid callback_url'}), 400
+
     token = secrets.token_urlsafe(32)
     pending = PendingBooking(
         confirmation_token=token,
@@ -105,7 +109,7 @@ def book():
         start_datetime=start_utc,
         end_datetime=end_utc,
         time_zone=tz,
-        callback_url=data.get('callback_url'),
+        callback_url=callback_url,
         expires_at=datetime.utcnow() + timedelta(hours=24),
     )
     db.session.add(pending)

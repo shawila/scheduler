@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 import dns.resolver
 from app.slots import SLOT_DURATION_MINUTES, MAX_BOOKING_DURATION_MINUTES
@@ -27,3 +28,12 @@ def check_mx_record(email: str) -> bool:
         return len(records) > 0
     except Exception:
         return False
+
+
+def is_allowed_callback_url(url: str) -> bool:
+    if not url.startswith('https://') and not url.startswith('http://'):
+        return False
+    allowed_prefix = os.environ.get('ALLOWED_CALLBACK_PREFIX')
+    if allowed_prefix:
+        return url.startswith(allowed_prefix)
+    return True
