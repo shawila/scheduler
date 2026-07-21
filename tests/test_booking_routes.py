@@ -11,7 +11,7 @@ VALID_PAYLOAD = {
     'org_uid': 1,
     'guest_email': 'guest@example.com',
     'guest_name': 'John Doe',
-    'date': '2024-08-01',
+    'date': '2030-08-01',
     'start_time': '11:00',
     'end_time': '12:30',
 }
@@ -128,6 +128,37 @@ class TestPostBook:
         with app.app_context():
             pending = PendingBooking.query.filter_by(guest_email='guest@example.com').first()
             assert pending.callback_url is None
+
+    def test_outside_window_returns_400(self, client, authed_user, org_with_owner):
+        payload = {**VALID_PAYLOAD, 'org_uid': org_with_owner, 'start_time': '07:00', 'end_time': '07:30'}
+        with patch('app.booking.routes.check_mx_record', return_value=True):
+            response = client.post('/book', json=payload, headers=auth())
+        assert response.status_code == 400
+        assert 'outside booking hours' in response.json['error']
+
+    def test_explicit_window_allows_early_slot(self, client, app, authed_user, org_with_owner):
+        payload = {**VALID_PAYLOAD, 'org_uid': org_with_owner,
+                   'start_time': '07:00', 'end_time': '07:30',
+                   'window_start': '06:00', 'window_end': '12:00'}
+        with patch('app.booking.routes.check_mx_record', return_value=True), \
+             patch('app.booking.routes.select_admin', return_value=authed_user), \
+             patch('app.booking.routes.send_confirmation_email'):
+            response = client.post('/book', json=payload, headers=auth())
+        assert response.status_code == 201
+
+    def test_past_start_returns_400(self, client, authed_user, org_with_owner):
+        payload = {**VALID_PAYLOAD, 'org_uid': org_with_owner, 'date': '2020-01-01'}
+        with patch('app.booking.routes.check_mx_record', return_value=True):
+            response = client.post('/book', json=payload, headers=auth())
+        assert response.status_code == 400
+        assert 'in the past' in response.json['error']
+
+    def test_confirmed_true_is_also_window_validated(self, client, authed_user, org_with_owner):
+        payload = {**VALID_PAYLOAD, 'org_uid': org_with_owner,
+                   'start_time': '07:00', 'end_time': '07:30', 'confirmed': True}
+        with patch('app.booking.routes.check_mx_record', return_value=True):
+            response = client.post('/book', json=payload, headers=auth())
+        assert response.status_code == 400
 
     def test_rejects_non_http_callback_url_scheme(self, client, app, authed_user, org_with_owner):
         payload = {**VALID_PAYLOAD, 'org_uid': org_with_owner, 'callback_url': 'javascript:alert(1)'}
@@ -396,7 +427,7 @@ class TestPostBookConfirmedTimezone:
         with app.app_context():
             booking = Booking.query.filter_by(google_event_id='google_event_direct').first()
             # 11:00 JST == 02:00 UTC same day
-            assert booking.start_datetime == datetime(2024, 8, 1, 2, 0)
+            assert booking.start_datetime == datetime(2030, 8, 1, 2, 0)
 
     def test_unknown_timezone_returns_400(self, client, authed_user, org_with_owner):
         response = client.post('/book', json=self._payload(org_with_owner, tz='Not/AZone'), headers=auth())
@@ -415,7 +446,7 @@ class TestPostBookPendingTimezone:
         with app.app_context():
             pending = PendingBooking.query.filter_by(guest_email='guest@example.com').first()
             assert pending.time_zone == 'Asia/Tokyo'
-            assert pending.start_datetime == datetime(2024, 8, 1, 2, 0)
+            assert pending.start_datetime == datetime(2030, 8, 1, 2, 0)
 
 
 class TestConfirmBookingTimezone:
