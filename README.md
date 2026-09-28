@@ -79,10 +79,12 @@ For production, use `postgresql://user:pass@host:5432/dbname` for `DATABASE_URL`
 | `Booking`             | A confirmed booking, mirrors a Google Calendar event                     |
 | `PendingBooking`      | An unconfirmed booking awaiting guest confirmation via emailed link       |
 
-> Note: the invite/join flow and the pending-booking/email-confirmation flow currently have
-> no caller in hatan (confirmed 2026-07-13) — see `docs/BACKLOG.md`. The invite/join flow is
-> unscheduled scaffolding; the pending-booking/email-confirmation flow is **planned to be
-> wired up by hatan next** — not a removal candidate.
+> Note: the invite/join flow still has no caller in hatan (confirmed 2026-07-13) — see
+> `docs/BACKLOG.md`. It is unscheduled scaffolding, not a removal candidate. The
+> pending-booking/email-confirmation flow **is now wired up**: hatan's chat-widget booking
+> (`Api::Widget::BookingsController`) calls `POST /book` with `confirmed: false` and a
+> `callback_url`, and `GET /confirm-booking/<token>` notifies that URL when the guest
+> confirms (confirmed live 2026-09-28).
 
 ## API Endpoints
 
