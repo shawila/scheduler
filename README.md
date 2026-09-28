@@ -52,7 +52,7 @@ python run.py
 |-------------------------------|---------------------------|---------------------------------------------------------------------|
 | `FLASK_ENV`                   | —                          | Set to `development` to allow HTTP for OAuth                       |
 | `SECRET_KEY`                  | `your-secret-key`          | Flask session secret — change before deploy                        |
-| `DATABASE_URL`                | `sqlite:///app.db`         | SQLAlchemy connection string                                        |
+| `DATABASE_URL`                | `sqlite:///app.db`         | SQLAlchemy connection string. When this is a Postgres URL, scheduler's tables are automatically isolated in the `scheduler` schema (`search_path` set on the connection; the schema is created via `CREATE SCHEMA IF NOT EXISTS` on `flask db upgrade` if needed) — no separate config required |
 | `PORT`                        | `3032`                     | Dev server port (`python run.py` only — production gunicorn stays on 5000) |
 | `MAIL_SERVER`                 | `smtp.gmail.com`           | SMTP server for confirmation/invite emails                          |
 | `MAIL_PORT`                   | `587`                      | SMTP port                                                           |
@@ -66,7 +66,10 @@ python run.py
 | `SCHEDULER_PPS_CLIENT_SECRET` | —                          | `pps_auth` client secret (from `cargo run --bin seed`)              |
 | `HATAN_SERVICE_TOKEN`         | —                          | Shared secret for `/org/register-external` (same value in hatan)    |
 
-For production, use `postgresql://user:pass@host:5432/dbname` for `DATABASE_URL`.
+For production, use `postgresql://user:pass@host:5432/dbname` for `DATABASE_URL`. If that
+database is shared with sibling apps (e.g. hatan), no separate database is needed —
+scheduler's tables and its own `alembic_version` live in the dedicated `scheduler` schema
+(see above), isolated from the other apps' tables.
 
 ## Data Model
 
